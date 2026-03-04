@@ -29,7 +29,8 @@
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
 		"release": "n8n-node release",
-		"prepublishOnly": "n8n-node prerelease"
+		"publish:manual": "npm run lint && npm run build && npm publish --access public",
+		"prepublishOnly": "echo ok"
 	},
 	"files": [
 		"dist"
