@@ -1,6 +1,6 @@
 {
-	"name": "@org21/n8n-nodes-org21",
-	"version": "0.1.0",
+	"name": "n8n-nodes-org21",
+	"version": "0.1.1",
 	"description": "n8n community node that sniffs workflow metadata, logs, timing, and errors, then triggers a sub-flow via webhook or n8n API.",
 	"license": "MIT",
 	"homepage": "https://github.com/org21-ai/n8n-nodes-org21",
@@ -15,8 +15,8 @@
 		"monitoring"
 	],
 	"author": {
-		"name": "Org21",
-		"email": "dev@org21.ai"
+		"name": "ofekdekel",
+		"email": "ofek@org21.ai"
 	},
 	"repository": {
 		"type": "git",
