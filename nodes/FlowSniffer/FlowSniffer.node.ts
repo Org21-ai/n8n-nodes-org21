@@ -56,6 +56,17 @@ export class FlowSniffer implements INodeType {
 				description: 'How to trigger the sub-flow',
 			},
 
+			// ── Tenant ID ───────────────────────────────────────────────────────
+			{
+				displayName: 'Tenant ID',
+				name: 'tenantId',
+				type: 'string',
+				default: '',
+				required: true,
+				placeholder: 'acme-corp',
+				description: 'Your Org21 tenant ID — used to route OTEL logs to the correct tenant',
+			},
+
 			// ── Webhook settings ────────────────────────────────────────────────
 			{
 				displayName: 'Webhook URL',
@@ -166,6 +177,7 @@ export class FlowSniffer implements INodeType {
 		const startTime = Date.now();
 
 		const triggerMode = this.getNodeParameter('triggerMode', 0) as string;
+		const tenantId = this.getNodeParameter('tenantId', 0) as string;
 		const includeMetadata = this.getNodeParameter('includeMetadata', 0) as boolean;
 		const includeItemData = this.getNodeParameter('includeItemData', 0) as boolean;
 		const includeTiming = this.getNodeParameter('includeTiming', 0) as boolean;
@@ -175,6 +187,7 @@ export class FlowSniffer implements INodeType {
 
 		// ── Build sniffed payload ───────────────────────────────────────────
 		const payload: IDataObject = {};
+		payload.tenant_id = tenantId;
 
 		if (includeMetadata) {
 			const workflow = this.getWorkflow();
@@ -219,6 +232,7 @@ export class FlowSniffer implements INodeType {
 		const headers: IDataObject = {
 			'Content-Type': 'application/json',
 			'X-Org21-Source': 'flow-sniffer',
+			'X-Org21-Tenant-Id': tenantId,
 		};
 		const headerEntries = (additionalHeaders.header as IDataObject[] | undefined) ?? [];
 		for (const h of headerEntries) {

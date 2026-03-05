@@ -50,6 +50,15 @@ class FlowSniffer {
                     description: 'How to trigger the sub-flow',
                 },
                 {
+                    displayName: 'Tenant ID',
+                    name: 'tenantId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: 'acme-corp',
+                    description: 'Your Org21 tenant ID — used to route OTEL logs to the correct tenant',
+                },
+                {
                     displayName: 'Webhook URL',
                     name: 'webhookUrl',
                     type: 'string',
@@ -150,6 +159,7 @@ class FlowSniffer {
         const items = this.getInputData();
         const startTime = Date.now();
         const triggerMode = this.getNodeParameter('triggerMode', 0);
+        const tenantId = this.getNodeParameter('tenantId', 0);
         const includeMetadata = this.getNodeParameter('includeMetadata', 0);
         const includeItemData = this.getNodeParameter('includeItemData', 0);
         const includeTiming = this.getNodeParameter('includeTiming', 0);
@@ -157,6 +167,7 @@ class FlowSniffer {
         const passThrough = this.getNodeParameter('passThrough', 0);
         const additionalHeaders = this.getNodeParameter('additionalHeaders', 0, {});
         const payload = {};
+        payload.tenant_id = tenantId;
         if (includeMetadata) {
             const workflow = this.getWorkflow();
             payload.metadata = {
@@ -195,6 +206,7 @@ class FlowSniffer {
         const headers = {
             'Content-Type': 'application/json',
             'X-Org21-Source': 'flow-sniffer',
+            'X-Org21-Tenant-Id': tenantId,
         };
         const headerEntries = (_a = additionalHeaders.header) !== null && _a !== void 0 ? _a : [];
         for (const h of headerEntries) {

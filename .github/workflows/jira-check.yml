@@ -1,0 +1,11 @@
+name: Jira Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main, master]
+
+jobs:
+  jira:
+    uses: Org21-ai/pipelines/.github/workflows/jira-check.yml@main
