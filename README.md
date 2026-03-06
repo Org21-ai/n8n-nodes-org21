@@ -34,7 +34,6 @@ Drop this node into any workflow to capture execution data and trigger a sub-flo
 | **Item Data** | The actual JSON items passing through the node | On |
 | **Timing** | Execution timing, input/output item counts | On |
 | **Errors** | Error details from items with errors | On |
-| **Environment** | Process environment variables (filtered for safety) | Off |
 
 #### Trigger modes
 
