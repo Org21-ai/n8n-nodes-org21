@@ -2,6 +2,40 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FlowSniffer = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
+const TOKEN_REFRESH_BUFFER_MS = 60000;
+const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
+async function exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
+    const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+    const response = await context.helpers.httpRequest({
+        method: 'POST',
+        url: tokenUrl,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: clientId,
+            client_secret: clientSecret,
+            audience: 'api otel',
+        }).toString(),
+    });
+    const expiresIn = response.expires_in || (DEFAULT_TOKEN_TTL_MS / 1000);
+    return {
+        accessToken: response.access_token,
+        expiresInMs: expiresIn * 1000,
+    };
+}
+async function getCachedKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
+    const staticData = context.getWorkflowStaticData('node');
+    const now = Date.now();
+    if (staticData.accessToken &&
+        typeof staticData.tokenExpiresAt === 'number' &&
+        staticData.tokenExpiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
+        return staticData.accessToken;
+    }
+    const { accessToken, expiresInMs } = await exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret);
+    staticData.accessToken = accessToken;
+    staticData.tokenExpiresAt = now + expiresInMs;
+    return accessToken;
+}
 class FlowSniffer {
     constructor() {
         this.description = {
@@ -22,11 +56,6 @@ class FlowSniffer {
                 {
                     name: 'org21Api',
                     required: false,
-                    displayOptions: {
-                        show: {
-                            triggerMode: ['n8nApi'],
-                        },
-                    },
                 },
             ],
             properties: [
@@ -202,6 +231,31 @@ class FlowSniffer {
                 headers[h.name] = h.value;
             }
         }
+        let credentials;
+        try {
+            credentials = await this.getCredentials('org21Api');
+        }
+        catch {
+        }
+        if (credentials) {
+            const authMethod = credentials.authMethod || 'apiKey';
+            if (authMethod === 'keycloak') {
+                const keycloakUrl = credentials.keycloakUrl;
+                const realm = credentials.keycloakRealm || 'org21';
+                const clientId = credentials.keycloakClientId;
+                const clientSecret = credentials.keycloakClientSecret;
+                if (!keycloakUrl || !clientId || !clientSecret) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required');
+                }
+                const token = await getCachedKeycloakToken(this, keycloakUrl, realm, clientId, clientSecret);
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            else {
+                if (credentials.apiKey) {
+                    headers['X-N8N-API-KEY'] = credentials.apiKey;
+                }
+            }
+        }
         try {
             if (triggerMode === 'webhook') {
                 const webhookUrl = this.getNodeParameter('webhookUrl', 0);
@@ -218,16 +272,27 @@ class FlowSniffer {
             }
             else {
                 const workflowId = this.getNodeParameter('workflowId', 0);
-                const credentials = await this.getCredentials('org21Api');
-                const baseUrl = credentials.baseUrl.replace(/\/+$/, '');
-                const apiKey = credentials.apiKey;
                 if (!workflowId) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Workflow ID is required');
                 }
-                headers['X-N8N-API-KEY'] = apiKey;
+                if (!credentials) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Credentials are required for n8n API mode');
+                }
+                const authMethod = credentials.authMethod || 'apiKey';
+                let apiUrl;
+                if (authMethod === 'apiKey') {
+                    const baseUrl = (credentials.baseUrl || '').replace(/\/+$/, '');
+                    if (!baseUrl) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
+                    }
+                    apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
+                }
+                else {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.');
+                }
                 await this.helpers.httpRequest({
                     method: 'POST',
-                    url: `${baseUrl}/api/v1/workflows/${workflowId}/run`,
+                    url: apiUrl,
                     body: payload,
                     headers,
                     json: true,

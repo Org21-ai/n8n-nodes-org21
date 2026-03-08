@@ -8,6 +8,83 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
+/** Buffer before token expiry to trigger refresh (60 seconds). */
+const TOKEN_REFRESH_BUFFER_MS = 60_000;
+
+/** Default token TTL if not returned by Keycloak (30 minutes). */
+const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Exchange Keycloak client credentials for a JWT access token.
+ * Audiences: api, otel (hardcoded per design).
+ */
+async function exchangeKeycloakToken(
+	context: IExecuteFunctions,
+	keycloakUrl: string,
+	realm: string,
+	clientId: string,
+	clientSecret: string,
+): Promise<{ accessToken: string; expiresInMs: number }> {
+	const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+
+	const response = await context.helpers.httpRequest({
+		method: 'POST' as IHttpRequestMethods,
+		url: tokenUrl,
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
+			grant_type: 'client_credentials',
+			client_id: clientId,
+			client_secret: clientSecret,
+			audience: 'api otel',
+		}).toString(),
+	});
+
+	const expiresIn = (response.expires_in as number) || (DEFAULT_TOKEN_TTL_MS / 1000);
+
+	return {
+		accessToken: response.access_token as string,
+		expiresInMs: expiresIn * 1000,
+	};
+}
+
+/**
+ * Get a cached Keycloak JWT or exchange credentials for a fresh one.
+ * Uses n8n's getWorkflowStaticData() to persist the token between executions.
+ */
+async function getCachedKeycloakToken(
+	context: IExecuteFunctions,
+	keycloakUrl: string,
+	realm: string,
+	clientId: string,
+	clientSecret: string,
+): Promise<string> {
+	const staticData = context.getWorkflowStaticData('node');
+	const now = Date.now();
+
+	// Reuse cached token if still valid (with buffer before expiry)
+	if (
+		staticData.accessToken &&
+		typeof staticData.tokenExpiresAt === 'number' &&
+		staticData.tokenExpiresAt > now + TOKEN_REFRESH_BUFFER_MS
+	) {
+		return staticData.accessToken as string;
+	}
+
+	// Token missing or expired — exchange for a new one
+	const { accessToken, expiresInMs } = await exchangeKeycloakToken(
+		context,
+		keycloakUrl,
+		realm,
+		clientId,
+		clientSecret,
+	);
+
+	staticData.accessToken = accessToken;
+	staticData.tokenExpiresAt = now + expiresInMs;
+
+	return accessToken;
+}
+
 export class FlowSniffer implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Org21 Flow Sniffer',
@@ -27,11 +104,6 @@ export class FlowSniffer implements INodeType {
 			{
 				name: 'org21Api',
 				required: false,
-				displayOptions: {
-					show: {
-						triggerMode: ['n8nApi'],
-					},
-				},
 			},
 		],
 		properties: [
@@ -227,6 +299,46 @@ export class FlowSniffer implements INodeType {
 			}
 		}
 
+		// ── Resolve auth (Keycloak Bearer or legacy API key) ────────────────
+		let credentials: IDataObject | undefined;
+		try {
+			credentials = await this.getCredentials('org21Api') as IDataObject;
+		} catch {
+			// Credentials not configured — proceed without auth
+		}
+
+		if (credentials) {
+			const authMethod = (credentials.authMethod as string) || 'apiKey';
+
+			if (authMethod === 'keycloak') {
+				const keycloakUrl = credentials.keycloakUrl as string;
+				const realm = (credentials.keycloakRealm as string) || 'org21';
+				const clientId = credentials.keycloakClientId as string;
+				const clientSecret = credentials.keycloakClientSecret as string;
+
+				if (!keycloakUrl || !clientId || !clientSecret) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required',
+					);
+				}
+
+				const token = await getCachedKeycloakToken(
+					this,
+					keycloakUrl,
+					realm,
+					clientId,
+					clientSecret,
+				);
+				headers['Authorization'] = `Bearer ${token}`;
+			} else {
+				// Legacy API key mode
+				if (credentials.apiKey) {
+					headers['X-N8N-API-KEY'] = credentials.apiKey as string;
+				}
+			}
+		}
+
 		// ── Trigger sub-flow ────────────────────────────────────────────────
 		try {
 			if (triggerMode === 'webhook') {
@@ -242,21 +354,36 @@ export class FlowSniffer implements INodeType {
 					json: true,
 				});
 			} else {
-				// n8n API mode — base URL + API key come from the credential
+				// n8n API mode — requires credentials
 				const workflowId = this.getNodeParameter('workflowId', 0) as string;
-				const credentials = await this.getCredentials('org21Api');
-				const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
-				const apiKey = credentials.apiKey as string;
-
 				if (!workflowId) {
 					throw new NodeOperationError(this.getNode(), 'Workflow ID is required');
 				}
+				if (!credentials) {
+					throw new NodeOperationError(this.getNode(), 'Credentials are required for n8n API mode');
+				}
 
-				headers['X-N8N-API-KEY'] = apiKey;
+				const authMethod = (credentials.authMethod as string) || 'apiKey';
+				let apiUrl: string;
+
+				if (authMethod === 'apiKey') {
+					const baseUrl = (credentials.baseUrl as string || '').replace(/\/+$/, '');
+					if (!baseUrl) {
+						throw new NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
+					}
+					apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
+				} else {
+					// Keycloak mode — n8n API URL must come from webhook URL or be configured elsewhere
+					// In Keycloak mode the primary use case is webhook POST with Bearer token
+					throw new NodeOperationError(
+						this.getNode(),
+						'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.',
+					);
+				}
 
 				await this.helpers.httpRequest({
 					method: 'POST' as IHttpRequestMethods,
-					url: `${baseUrl}/api/v1/workflows/${workflowId}/run`,
+					url: apiUrl,
 					body: payload,
 					headers,
 					json: true,
