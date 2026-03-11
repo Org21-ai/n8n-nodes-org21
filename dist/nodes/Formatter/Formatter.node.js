@@ -142,6 +142,56 @@ class Formatter {
                     description: 'Whether to return original items (flow continues as normal) or return the sniffed payload instead',
                 },
                 {
+                    displayName: 'Custom Fields',
+                    name: 'customFields',
+                    type: 'fixedCollection',
+                    typeOptions: {
+                        multipleValues: true,
+                    },
+                    default: {},
+                    placeholder: 'Add Custom Field',
+                    description: 'Add custom key-value pairs to the payload metadata',
+                    options: [
+                        {
+                            name: 'field',
+                            displayName: 'Field',
+                            values: [
+                                {
+                                    displayName: 'Field Name',
+                                    name: 'name',
+                                    type: 'string',
+                                    default: '',
+                                    placeholder: 'e.g. environment',
+                                    description: 'Name of the custom field',
+                                },
+                                {
+                                    displayName: 'Field Type',
+                                    name: 'fieldType',
+                                    type: 'options',
+                                    options: [
+                                        { name: 'String', value: 'string' },
+                                        { name: 'Number', value: 'number' },
+                                        { name: 'Boolean', value: 'boolean' },
+                                        { name: 'Array (JSON)', value: 'array' },
+                                        { name: 'Object (JSON)', value: 'object' },
+                                        { name: 'Binary Data', value: 'binary' },
+                                    ],
+                                    default: 'string',
+                                    description: 'Data type of the field value',
+                                },
+                                {
+                                    displayName: 'Value',
+                                    name: 'value',
+                                    type: 'string',
+                                    default: '',
+                                    placeholder: 'e.g. production',
+                                    description: 'Value of the custom field (supports expressions). For Array/Object use JSON, for Boolean use true/false, for Binary use the binary property name.',
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
                     displayName: 'Additional Headers',
                     name: 'additionalHeaders',
                     type: 'fixedCollection',
@@ -175,7 +225,7 @@ class Formatter {
         };
     }
     async execute() {
-        var _a;
+        var _a, _b, _c, _d;
         const items = this.getInputData();
         const startTime = Date.now();
         const triggerMode = this.getNodeParameter('triggerMode', 0);
@@ -185,6 +235,7 @@ class Formatter {
         const includeErrors = this.getNodeParameter('includeErrors', 0);
         const passThrough = this.getNodeParameter('passThrough', 0);
         const additionalHeaders = this.getNodeParameter('additionalHeaders', 0, {});
+        const customFields = this.getNodeParameter('customFields', 0, {});
         const payload = {};
         if (includeMetadata) {
             const workflow = this.getWorkflow();
@@ -221,11 +272,57 @@ class Formatter {
                 payload.errors = errors;
             }
         }
+        const fieldEntries = (_a = customFields.field) !== null && _a !== void 0 ? _a : [];
+        if (fieldEntries.length > 0) {
+            const custom = {};
+            for (const f of fieldEntries) {
+                const name = f.name;
+                if (!name)
+                    continue;
+                const fieldType = f.fieldType;
+                const rawValue = f.value;
+                switch (fieldType) {
+                    case 'number':
+                        custom[name] = Number(rawValue);
+                        break;
+                    case 'boolean':
+                        custom[name] = rawValue === 'true' || rawValue === '1';
+                        break;
+                    case 'array':
+                    case 'object':
+                        try {
+                            custom[name] = JSON.parse(rawValue);
+                        }
+                        catch {
+                            custom[name] = rawValue;
+                        }
+                        break;
+                    case 'binary': {
+                        const binaryData = (_c = (_b = items[0]) === null || _b === void 0 ? void 0 : _b.binary) === null || _c === void 0 ? void 0 : _c[rawValue];
+                        if (binaryData) {
+                            custom[name] = {
+                                fileName: binaryData.fileName,
+                                mimeType: binaryData.mimeType,
+                                fileSize: binaryData.fileSize,
+                                data: binaryData.data,
+                            };
+                        }
+                        else {
+                            custom[name] = null;
+                        }
+                        break;
+                    }
+                    default:
+                        custom[name] = rawValue;
+                }
+            }
+            payload.customFields = custom;
+        }
         const headers = {
             'Content-Type': 'application/json',
             'X-Org21-Source': 'formatter',
         };
-        const headerEntries = (_a = additionalHeaders.header) !== null && _a !== void 0 ? _a : [];
+        const headerEntries = (_d = additionalHeaders.header) !== null && _d !== void 0 ? _d : [];
         for (const h of headerEntries) {
             if (h.name && h.value) {
                 headers[h.name] = h.value;
