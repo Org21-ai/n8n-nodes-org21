@@ -10,5 +10,5 @@
 			}
 		]
 	},
-	"alias": ["sniffer", "metadata", "logs", "observability", "monitor", "trigger", "sub-flow", "org21"]
+	"alias": ["formatter", "metadata", "logs", "observability", "monitor", "trigger", "sub-flow", "org21"]
 }

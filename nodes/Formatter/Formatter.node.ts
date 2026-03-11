@@ -85,17 +85,17 @@ async function getCachedKeycloakToken(
 	return accessToken;
 }
 
-export class FlowSniffer implements INodeType {
+export class Formatter implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Org21 Flow Sniffer',
+		displayName: 'Org21-Observer',
 		name: 'flowSniffer',
-		icon: 'file:../../icons/org21.svg',
+		icon: 'file:org21.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
 		description: 'Sniff workflow metadata, logs, timing, and errors, then trigger a sub-flow via webhook or n8n API',
 		defaults: {
-			name: 'Flow Sniffer',
+			name: 'Org21-Observer',
 		},
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
@@ -290,7 +290,7 @@ export class FlowSniffer implements INodeType {
 		// ── Build headers ───────────────────────────────────────────────────
 		const headers: IDataObject = {
 			'Content-Type': 'application/json',
-			'X-Org21-Source': 'flow-sniffer',
+			'X-Org21-Source': 'formatter',
 		};
 		const headerEntries = (additionalHeaders.header as IDataObject[] | undefined) ?? [];
 		for (const h of headerEntries) {

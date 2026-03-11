@@ -22,7 +22,7 @@ npm install @org21/n8n-nodes-org21
 
 ## Nodes
 
-### Flow Sniffer
+### Org21-Observer
 
 Drop this node into any workflow to capture execution data and trigger a sub-flow.
 

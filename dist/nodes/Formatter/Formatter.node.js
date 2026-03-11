@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FlowSniffer = void 0;
+exports.Formatter = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const TOKEN_REFRESH_BUFFER_MS = 60000;
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -36,18 +36,18 @@ async function getCachedKeycloakToken(context, keycloakUrl, realm, clientId, cli
     staticData.tokenExpiresAt = now + expiresInMs;
     return accessToken;
 }
-class FlowSniffer {
+class Formatter {
     constructor() {
         this.description = {
-            displayName: 'Org21 Flow Sniffer',
+            displayName: 'Org21-Observer',
             name: 'flowSniffer',
-            icon: 'file:../../icons/org21.svg',
+            icon: 'file:org21.svg',
             group: ['transform'],
             version: 1,
             subtitle: '={{$parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
             description: 'Sniff workflow metadata, logs, timing, and errors, then trigger a sub-flow via webhook or n8n API',
             defaults: {
-                name: 'Flow Sniffer',
+                name: 'Org21-Observer',
             },
             inputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
@@ -223,7 +223,7 @@ class FlowSniffer {
         }
         const headers = {
             'Content-Type': 'application/json',
-            'X-Org21-Source': 'flow-sniffer',
+            'X-Org21-Source': 'formatter',
         };
         const headerEntries = (_a = additionalHeaders.header) !== null && _a !== void 0 ? _a : [];
         for (const h of headerEntries) {
@@ -319,5 +319,5 @@ class FlowSniffer {
         return [[{ json: payload }]];
     }
 }
-exports.FlowSniffer = FlowSniffer;
-//# sourceMappingURL=FlowSniffer.node.js.map
+exports.Formatter = Formatter;
+//# sourceMappingURL=Formatter.node.js.map
