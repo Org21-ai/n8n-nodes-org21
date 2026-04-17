@@ -228,12 +228,12 @@ export class Formatter implements INodeType {
 								name: 'fieldType',
 								type: 'options',
 								options: [
-									{ name: 'String', value: 'string' },
-									{ name: 'Number', value: 'number' },
-									{ name: 'Boolean', value: 'boolean' },
 									{ name: 'Array (JSON)', value: 'array' },
-									{ name: 'Object (JSON)', value: 'object' },
 									{ name: 'Binary Data', value: 'binary' },
+									{ name: 'Boolean', value: 'boolean' },
+									{ name: 'Number', value: 'number' },
+									{ name: 'Object (JSON)', value: 'object' },
+									{ name: 'String', value: 'string' },
 								],
 								default: 'string',
 								description: 'Data type of the field value',
@@ -402,8 +402,14 @@ export class Formatter implements INodeType {
 		let credentials: IDataObject | undefined;
 		try {
 			credentials = await this.getCredentials('org21Api') as IDataObject;
-		} catch {
-			// Credentials not configured — proceed without auth
+		} catch (error) {
+			// Only ignore "credentials not configured" — re-throw unexpected errors
+			const msg = (error as Error).message || '';
+			if (!msg.includes('No credentials') && !msg.includes('not configured') && !msg.includes('does not have')) {
+				throw new NodeOperationError(this.getNode(), error as Error, {
+					message: `Unexpected error loading credentials: ${msg}`,
+				});
+			}
 		}
 
 		if (credentials) {
@@ -445,13 +451,23 @@ export class Formatter implements INodeType {
 				if (!webhookUrl) {
 					throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
 				}
-				await this.helpers.httpRequest({
-					method: 'POST' as IHttpRequestMethods,
-					url: webhookUrl,
-					body: payload,
-					headers,
-					json: true,
-				});
+				if (credentials) {
+					await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
+						method: 'POST' as IHttpRequestMethods,
+						url: webhookUrl,
+						body: payload,
+						headers,
+						json: true,
+					});
+				} else {
+					await this.helpers.httpRequest({
+						method: 'POST' as IHttpRequestMethods,
+						url: webhookUrl,
+						body: payload,
+						headers,
+						json: true,
+					});
+				}
 			} else {
 				// n8n API mode — requires credentials
 				const workflowId = this.getNodeParameter('workflowId', 0) as string;
@@ -480,7 +496,7 @@ export class Formatter implements INodeType {
 					);
 				}
 
-				await this.helpers.httpRequest({
+				await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
 					method: 'POST' as IHttpRequestMethods,
 					url: apiUrl,
 					body: payload,

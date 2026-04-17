@@ -169,12 +169,12 @@ class Formatter {
                                     name: 'fieldType',
                                     type: 'options',
                                     options: [
-                                        { name: 'String', value: 'string' },
-                                        { name: 'Number', value: 'number' },
-                                        { name: 'Boolean', value: 'boolean' },
                                         { name: 'Array (JSON)', value: 'array' },
-                                        { name: 'Object (JSON)', value: 'object' },
                                         { name: 'Binary Data', value: 'binary' },
+                                        { name: 'Boolean', value: 'boolean' },
+                                        { name: 'Number', value: 'number' },
+                                        { name: 'Object (JSON)', value: 'object' },
+                                        { name: 'String', value: 'string' },
                                     ],
                                     default: 'string',
                                     description: 'Data type of the field value',
@@ -332,7 +332,13 @@ class Formatter {
         try {
             credentials = await this.getCredentials('org21Api');
         }
-        catch {
+        catch (error) {
+            const msg = error.message || '';
+            if (!msg.includes('No credentials') && !msg.includes('not configured') && !msg.includes('does not have')) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, {
+                    message: `Unexpected error loading credentials: ${msg}`,
+                });
+            }
         }
         if (credentials) {
             const authMethod = credentials.authMethod || 'apiKey';
@@ -359,13 +365,24 @@ class Formatter {
                 if (!webhookUrl) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Webhook URL is required');
                 }
-                await this.helpers.httpRequest({
-                    method: 'POST',
-                    url: webhookUrl,
-                    body: payload,
-                    headers,
-                    json: true,
-                });
+                if (credentials) {
+                    await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
+                        method: 'POST',
+                        url: webhookUrl,
+                        body: payload,
+                        headers,
+                        json: true,
+                    });
+                }
+                else {
+                    await this.helpers.httpRequest({
+                        method: 'POST',
+                        url: webhookUrl,
+                        body: payload,
+                        headers,
+                        json: true,
+                    });
+                }
             }
             else {
                 const workflowId = this.getNodeParameter('workflowId', 0);
@@ -387,7 +404,7 @@ class Formatter {
                 else {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.');
                 }
-                await this.helpers.httpRequest({
+                await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
                     method: 'POST',
                     url: apiUrl,
                     body: payload,
@@ -417,4 +434,4 @@ class Formatter {
     }
 }
 exports.Formatter = Formatter;
-//# sourceMappingURL=Formatter.node.js.map
+//# sourceMappingURL=FlowSniffer.node.js.map
