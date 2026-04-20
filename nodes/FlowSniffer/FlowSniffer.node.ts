@@ -199,6 +199,58 @@ export class Formatter implements INodeType {
 				description: 'Whether to return original items (flow continues as normal) or return the sniffed payload instead',
 			},
 
+			// ── Custom metadata fields ──────────────────────────────────────────
+			{
+				displayName: 'Custom Fields',
+				name: 'customFields',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				default: {},
+				placeholder: 'Add Custom Field',
+				description: 'Add custom key-value pairs to the payload metadata',
+				options: [
+					{
+						name: 'field',
+						displayName: 'Field',
+						values: [
+							{
+								displayName: 'Field Name',
+								name: 'name',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. environment',
+								description: 'Name of the custom field',
+							},
+							{
+								displayName: 'Field Type',
+								name: 'fieldType',
+								type: 'options',
+								options: [
+									{ name: 'Array (JSON)', value: 'array' },
+									{ name: 'Binary Data', value: 'binary' },
+									{ name: 'Boolean', value: 'boolean' },
+									{ name: 'Number', value: 'number' },
+									{ name: 'Object (JSON)', value: 'object' },
+									{ name: 'String', value: 'string' },
+								],
+								default: 'string',
+								description: 'Data type of the field value',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. production',
+								description: 'Value of the custom field (supports expressions). For Array/Object use JSON, for Boolean use true/false, for Binary use the binary property name.',
+							},
+						],
+					},
+				],
+			},
+
 			// ── Additional headers ──────────────────────────────────────────────
 			{
 				displayName: 'Additional Headers',
@@ -244,6 +296,7 @@ export class Formatter implements INodeType {
 		const includeErrors = this.getNodeParameter('includeErrors', 0) as boolean;
 		const passThrough = this.getNodeParameter('passThrough', 0) as boolean;
 		const additionalHeaders = this.getNodeParameter('additionalHeaders', 0, {}) as IDataObject;
+		const customFields = this.getNodeParameter('customFields', 0, {}) as IDataObject;
 
 		// ── Build sniffed payload ───────────────────────────────────────────
 		const payload: IDataObject = {};
@@ -287,6 +340,52 @@ export class Formatter implements INodeType {
 			}
 		}
 
+		// ── Custom fields ───────────────────────────────────────────────────
+		const fieldEntries = (customFields.field as IDataObject[] | undefined) ?? [];
+		if (fieldEntries.length > 0) {
+			const custom: IDataObject = {};
+			for (const f of fieldEntries) {
+				const name = f.name as string;
+				if (!name) continue;
+				const fieldType = f.fieldType as string;
+				const rawValue = f.value as string;
+
+				switch (fieldType) {
+					case 'number':
+						custom[name] = Number(rawValue);
+						break;
+					case 'boolean':
+						custom[name] = rawValue === 'true' || rawValue === '1';
+						break;
+					case 'array':
+					case 'object':
+						try {
+							custom[name] = JSON.parse(rawValue);
+						} catch {
+							custom[name] = rawValue;
+						}
+						break;
+					case 'binary': {
+						const binaryData = items[0]?.binary?.[rawValue];
+						if (binaryData) {
+							custom[name] = {
+								fileName: binaryData.fileName,
+								mimeType: binaryData.mimeType,
+								fileSize: binaryData.fileSize,
+								data: binaryData.data,
+							};
+						} else {
+							custom[name] = null;
+						}
+						break;
+					}
+					default:
+						custom[name] = rawValue;
+				}
+			}
+			payload.customFields = custom;
+		}
+
 		// ── Build headers ───────────────────────────────────────────────────
 		const headers: IDataObject = {
 			'Content-Type': 'application/json',
@@ -303,8 +402,14 @@ export class Formatter implements INodeType {
 		let credentials: IDataObject | undefined;
 		try {
 			credentials = await this.getCredentials('org21Api') as IDataObject;
-		} catch {
-			// Credentials not configured — proceed without auth
+		} catch (error) {
+			// Only ignore "credentials not configured" — re-throw unexpected errors
+			const msg = (error as Error).message || '';
+			if (!msg.includes('No credentials') && !msg.includes('not configured') && !msg.includes('does not have')) {
+				throw new NodeOperationError(this.getNode(), error as Error, {
+					message: `Unexpected error loading credentials: ${msg}`,
+				});
+			}
 		}
 
 		if (credentials) {
@@ -346,13 +451,23 @@ export class Formatter implements INodeType {
 				if (!webhookUrl) {
 					throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
 				}
-				await this.helpers.httpRequest({
-					method: 'POST' as IHttpRequestMethods,
-					url: webhookUrl,
-					body: payload,
-					headers,
-					json: true,
-				});
+				if (credentials) {
+					await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
+						method: 'POST' as IHttpRequestMethods,
+						url: webhookUrl,
+						body: payload,
+						headers,
+						json: true,
+					});
+				} else {
+					await this.helpers.httpRequest({
+						method: 'POST' as IHttpRequestMethods,
+						url: webhookUrl,
+						body: payload,
+						headers,
+						json: true,
+					});
+				}
 			} else {
 				// n8n API mode — requires credentials
 				const workflowId = this.getNodeParameter('workflowId', 0) as string;
@@ -381,7 +496,7 @@ export class Formatter implements INodeType {
 					);
 				}
 
-				await this.helpers.httpRequest({
+				await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
 					method: 'POST' as IHttpRequestMethods,
 					url: apiUrl,
 					body: payload,

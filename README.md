@@ -40,6 +40,33 @@ Drop this node into any workflow to capture execution data and trigger a sub-flo
 - **Webhook POST** — POST sniffed data to any URL (typically a sub-flow's Webhook trigger)
 - **n8n API** — Trigger a specific workflow via the n8n REST API (requires API key)
 
+#### Custom Fields
+
+Add your own key-value metadata to the payload. Click **Add Custom Field** and configure:
+
+| Setting | Description |
+|---------|-------------|
+| **Field Name** | Key name in the payload (e.g. `environment`) |
+| **Field Type** | `String`, `Number`, `Boolean`, `Array (JSON)`, `Object (JSON)`, or `Binary Data` |
+| **Value** | The value — supports n8n expressions (e.g. `{{ $json.myField }}`) |
+
+- For **Array/Object** types, enter valid JSON (e.g. `["a","b"]` or `{"key":"val"}`)
+- For **Boolean**, use `true` or `false`
+- For **Binary Data**, enter the binary property name from the input item
+
+Custom fields appear under `customFields` in the payload:
+
+```json
+{
+  "metadata": { "..." },
+  "customFields": {
+    "environment": "production",
+    "retryCount": 3,
+    "tags": ["urgent", "billing"]
+  }
+}
+```
+
 #### Options
 
 - **Pass Through** — When enabled (default), original items pass through unchanged so the main flow continues normally. When disabled, the node outputs the sniffed payload instead.

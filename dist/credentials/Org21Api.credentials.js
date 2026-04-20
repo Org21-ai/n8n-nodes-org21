@@ -7,6 +7,15 @@ class Org21Api {
         this.displayName = 'Org21 API';
         this.icon = 'file:org21.svg';
         this.documentationUrl = 'https://docs.n8n.io/api/authentication/';
+        this.authenticate = {
+            type: 'generic',
+            properties: {
+                headers: {
+                    'X-N8N-API-KEY': '={{$credentials.authMethod === "apiKey" ? $credentials.apiKey : ""}}',
+                    'X-Org21-Source': 'formatter',
+                },
+            },
+        };
         this.properties = [
             {
                 displayName: 'Auth Method',

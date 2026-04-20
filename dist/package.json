@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-org21",
-    "version": "0.1.5",
+    "version": "0.1.4",
     "description": "n8n community node that sniffs workflow metadata, logs, timing, and errors, then triggers a sub-flow via webhook or n8n API.",
     "license": "MIT",
     "homepage": "https://github.com/Org21-ai/n8n-nodes-org21",
@@ -42,7 +42,7 @@
             "dist/credentials/Org21Api.credentials.js"
         ],
         "nodes": [
-            "dist/nodes/Formatter/Formatter.node.js"
+            "dist/nodes/FlowSniffer/FlowSniffer.node.js"
         ]
     },
     "devDependencies": {

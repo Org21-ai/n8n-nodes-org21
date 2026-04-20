@@ -1,4 +1,5 @@
 import type {
+	IAuthenticateGeneric,
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
@@ -9,6 +10,15 @@ export class Org21Api implements ICredentialType {
 	displayName = 'Org21 API';
 	icon = 'file:org21.svg' as const;
 	documentationUrl = 'https://docs.n8n.io/api/authentication/';
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				'X-N8N-API-KEY': '={{$credentials.authMethod === "apiKey" ? $credentials.apiKey : ""}}',
+				'X-Org21-Source': 'formatter',
+			},
+		},
+	};
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Auth Method',

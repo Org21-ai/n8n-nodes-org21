@@ -42,7 +42,7 @@
 			"dist/credentials/Org21Api.credentials.js"
 		],
 		"nodes": [
-			"dist/nodes/Formatter/Formatter.node.js"
+			"dist/nodes/FlowSniffer/FlowSniffer.node.js"
 		]
 	},
 	"devDependencies": {

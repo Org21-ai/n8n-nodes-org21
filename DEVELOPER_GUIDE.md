@@ -82,6 +82,17 @@ Edit `nodes/Formatter/Formatter.node.ts`:
 
 Edit `credentials/Org21Api.credentials.ts`. The credential `name` (`org21Api`) is referenced in the node — keep them in sync.
 
+### Adding or modifying Custom Fields
+
+The "Custom Fields" feature uses a `fixedCollection` with `multipleValues: true`. Each field entry has:
+- `name` (string) — the key
+- `fieldType` (options) — determines how `value` is parsed: `string`, `number`, `boolean`, `array`, `object`, `binary`
+- `value` (string) — supports expressions natively via n8n
+
+Type coercion happens in the `execute()` method under the `// ── Custom fields` section. To add a new type:
+1. Add a new option to the `fieldType` options array in the `properties` section
+2. Add a `case` in the `switch (fieldType)` block in `execute()` to handle parsing
+
 ### Changing node behavior
 
 All logic is in `Formatter.node.ts` inside the `execute()` method.
@@ -141,7 +152,7 @@ npm install n8n-nodes-org21@latest
 # Make your changes
 git add .
 git commit -m "DEV-xxx: Description of changes"
-git push origin master
+git push origin main
 ```
 
 Commit messages must include a Jira key (DEV-xxx) per SOC 2 compliance.
