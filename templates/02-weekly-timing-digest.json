@@ -1,0 +1,191 @@
+{
+  "name": "Weekly n8n timing digest — top-10 slowest nodes to Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Overview\n\nTwo branches on one canvas:\n\n1. **Ingest sub-flow** (left) — receives every **Org21-Observer** POST and writes a timing row to Postgres.\n2. **Weekly digest** (right) — a Monday-morning schedule that reads the last 7 days, ranks nodes by average duration, and posts the top 10 to Slack.\n\nDrop the Observer into any workflow you care about; point its Webhook URL at this sub-flow's Webhook node. Over a week you build a real picture of where time is being spent across every n8n workflow you own.\n\n## How to use\n\n1. Install `n8n-nodes-org21` and create a **Postgres credential** + a **Slack credential** in n8n.\n2. Run the `CREATE TABLE` DDL from the sticky note below in your Postgres once.\n3. **Activate** the workflow so the Webhook listens.\n4. In any workflow you want to observe: drop an Org21-Observer, set `triggerMode = Webhook POST`, paste this sub-flow's Webhook URL.\n5. Wait a week. Monday 09:00 UTC you'll see the digest.\n\n## Customize\n\n- **Schedule** — edit the cron in the Schedule trigger.\n- **Window** — change `INTERVAL '7 days'` in the Postgres query.\n- **Storage** — swap Postgres for ClickHouse / BigQuery / anything that can `GROUP BY` and `AVG`.\n- **Channel** — swap Slack for Teams / Discord / Gmail; the formatted message works for any text channel.\n",
+        "height": 520,
+        "width": 560
+      },
+      "id": "note-overview",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [60, 60]
+    },
+    {
+      "parameters": {
+        "content": "## Postgres table DDL\n\n```sql\nCREATE TABLE IF NOT EXISTS org21_observer_events (\n  id           bigserial PRIMARY KEY,\n  ts           timestamptz NOT NULL DEFAULT now(),\n  workflow_id  text,\n  workflow_name text,\n  node_name    text,\n  duration_ms  integer,\n  item_count   integer,\n  has_errors   boolean,\n  payload      jsonb\n);\nCREATE INDEX IF NOT EXISTS org21_observer_events_ts_idx\n  ON org21_observer_events (ts DESC);\nCREATE INDEX IF NOT EXISTS org21_observer_events_workflow_node_idx\n  ON org21_observer_events (workflow_id, node_name);\n```\n\nRun once. The ingest branch below writes one row per Observer POST.",
+        "height": 420,
+        "width": 420
+      },
+      "id": "note-ddl",
+      "name": "Postgres DDL",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [60, 640]
+    },
+    {
+      "parameters": {
+        "content": "## Ingest sub-flow\n\nThe Org21-Observer node in **your** workflows POSTs here. The Postgres node writes a typed row for fast aggregation later.\n\nIf you don't want Postgres, swap in ClickHouse / BigQuery / even a plain HTTP Request to your own ingest endpoint — only the aggregation SQL below needs to change.",
+        "height": 280,
+        "width": 320
+      },
+      "id": "note-ingest",
+      "name": "About Ingest",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [640, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Weekly digest\n\nMondays 09:00 UTC. Queries the last 7 days, ranks nodes by average duration, takes the top 10, formats a Slack-friendly markdown block.\n\nFilters:\n- only nodes with `duration_ms` not null\n- only nodes that appeared at least 3 times in the window (noise suppression)\n\nChange the cron, window, or minimum-runs threshold via the sticky-note prompts in each node.",
+        "height": 320,
+        "width": 320
+      },
+      "id": "note-digest",
+      "name": "About Digest",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [640, 700]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "org21-observer-ingest",
+        "options": {}
+      },
+      "id": "webhook-ingest",
+      "name": "Observer Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 260]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "org21_observer_events", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_id": "={{ $json.body.metadata?.workflowId }}",
+            "workflow_name": "={{ $json.body.metadata?.workflowName }}",
+            "node_name": "={{ $json.body.metadata?.nodeName }}",
+            "duration_ms": "={{ $json.body.timing?.durationMs }}",
+            "item_count": "={{ $json.body.timing?.itemCount }}",
+            "has_errors": "={{ ($json.body.errors ?? []).length > 0 }}",
+            "payload": "={{ JSON.stringify($json.body) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "pg-insert",
+      "name": "Insert Observer Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [480, 260]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly",
+      "name": "Every Monday 09:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 840]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  workflow_name,\n  node_name,\n  count(*)             AS runs,\n  round(avg(duration_ms))::int AS avg_ms,\n  max(duration_ms)     AS max_ms\nFROM org21_observer_events\nWHERE ts >= now() - INTERVAL '7 days'\n  AND duration_ms IS NOT NULL\nGROUP BY workflow_name, node_name\nHAVING count(*) >= 3\nORDER BY avg_ms DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "pg-aggregate",
+      "name": "Top-10 slowest (7d avg)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [480, 840]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a Slack markdown digest from aggregated timing rows.\nconst rows = items.map(i => i.json);\nif (rows.length === 0) {\n  return [{ json: { formattedMessage: ':hourglass: *n8n weekly timing digest*\\nNo Observer events in the last 7 days.' } }];\n}\n\nconst lines = rows.map((r, i) => {\n  const rank = String(i + 1).padStart(2, ' ');\n  const ms = r.avg_ms.toString().padStart(6, ' ');\n  return `${rank}.  \\`${ms} ms\\`  ${r.workflow_name} → *${r.node_name}*  (runs: ${r.runs}, max: ${r.max_ms} ms)`;\n});\n\nconst header = ':hourglass_flowing_sand: *n8n weekly timing digest — top 10 slowest nodes (7-day avg)*';\nconst body = lines.join('\\n');\nreturn [{ json: { formattedMessage: `${header}\\n${body}` } }];"
+      },
+      "id": "code-format",
+      "name": "Format Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 840]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": ""
+        },
+        "text": "={{ $json.formattedMessage }}",
+        "otherOptions": {}
+      },
+      "id": "slack-post",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [920, 840]
+    }
+  ],
+  "connections": {
+    "Observer Webhook": {
+      "main": [
+        [
+          { "node": "Insert Observer Event", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Every Monday 09:00 UTC": {
+      "main": [
+        [
+          { "node": "Top-10 slowest (7d avg)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Top-10 slowest (7d avg)": {
+      "main": [
+        [
+          { "node": "Format Digest", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Digest": {
+      "main": [
+        [
+          { "node": "Post to Slack", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [
+    { "name": "observability" },
+    { "name": "performance" },
+    { "name": "slack" },
+    { "name": "postgres" }
+  ],
+  "triggerCount": 0,
+  "meta": { "templateCredsSetupCompleted": false },
+  "versionId": ""
+}
