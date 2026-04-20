@@ -7,8 +7,8 @@ Exported n8n workflow JSONs that showcase the **Org21-Observer** node (published
 | # | File | Summary |
 |---|------|---------|
 | 1 | `01-slack-error-alerts.json` | Drop Observer inline; sub-flow posts rich error context to Slack. |
-| 2 | `02-weekly-timing-digest.json` *(pending)* | Aggregate per-node timing across a week; post top-10 slowest to Slack/email. |
-| 3 | `03-auto-jira-on-failure.json` *(pending)* | Observer payloads with errors open a Jira ticket with full context. |
+| 2 | `02-weekly-timing-digest.json` | Ingest Observer events to Postgres; Monday cron posts top-10 slowest nodes (7-day avg) to Slack. Includes the `CREATE TABLE` DDL in a sticky note. |
+| 3 | `03-auto-jira-on-failure.json` | Observer errors → Jira issue with full workflow/node/error context + Slack notification. Includes dedupe strategy + PII redaction guidance stickies. |
 
 ## Importing locally
 
