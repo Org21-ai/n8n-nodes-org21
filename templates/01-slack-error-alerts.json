@@ -1,0 +1,236 @@
+{
+  "name": "Observe any n8n workflow and post rich error alerts to Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Overview\n\nDrop the **Org21-Observer** node inline anywhere in a workflow and it will capture per-node metadata, items, timing, and errors — then POST the whole payload to the sub-flow below. The sub-flow filters for errors and posts a rich, contextual Slack alert.\n\n## How to use\n\n1. **Install** `n8n-nodes-org21` via **Settings → Community nodes**.\n2. **Configure Slack credentials** on the *Post to Slack* node (no API keys live in this template).\n3. **Activate the sub-flow** (right branch), copy its Webhook URL.\n4. Paste that URL into the **Webhook URL** field of the *Org21-Observer* node.\n5. Execute the main branch — any error on any upstream node will light up Slack with workflow name, failing node, timing, and the payload that caused the failure.\n\n## Customize\n\n- Swap the Manual Trigger + HTTP Request + Set for **your** real workflow. The Observer is drop-in.\n- Swap Slack for Teams / Discord / email — keep the sub-flow, replace only the last node.\n- Disable `Include Item Data` on the Observer if payloads contain PII.\n",
+        "height": 420,
+        "width": 520
+      },
+      "id": "note-overview",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, 80]
+    },
+    {
+      "parameters": {
+        "content": "## Org21-Observer\n\nSits **inline** (not at the end) — `Pass Through` is on, so your workflow keeps running normally. The Observer only fans the sniffed payload sideways to the sub-flow.\n\nIf the upstream HTTP Request fails, `Include Errors` captures the error object; otherwise the payload still lands with timing + metadata. The sub-flow decides whether to alert.",
+        "height": 280,
+        "width": 320
+      },
+      "id": "note-observer",
+      "name": "About Observer",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [880, 80]
+    },
+    {
+      "parameters": {
+        "content": "## Sub-flow\n\nReceives every Observer POST. The `IF` filters for runs that carried a non-empty `errors` array — silent success executions don't alert.\n\n**To swap Slack** for another channel: delete the *Post to Slack* node and drop in Microsoft Teams / Discord / Gmail. The formatted message from the *Format Alert* Set node works for any text channel.",
+        "height": 280,
+        "width": 320
+      },
+      "id": "note-subflow",
+      "name": "About Sub-flow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [880, 560]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-main",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/health",
+        "options": {}
+      },
+      "id": "http-example",
+      "name": "Example HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "status",
+              "value": "={{ $json.status ?? 'unknown' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-example",
+      "name": "Example Transform",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "triggerMode": "webhook",
+        "webhookUrl": "PASTE_SUBFLOW_WEBHOOK_URL_HERE",
+        "includeMetadata": true,
+        "includeItemData": true,
+        "includeTiming": true,
+        "includeErrors": true,
+        "passThrough": true
+      },
+      "id": "observer",
+      "name": "Org21-Observer",
+      "type": "n8n-nodes-org21.flowSniffer",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "org21-observer-alerts",
+        "options": {}
+      },
+      "id": "webhook-sub",
+      "name": "Observer Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ($json.body?.errors ?? []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-errors",
+      "name": "Has errors?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "formattedMessage",
+              "value": "=:rotating_light: *n8n workflow error*\nWorkflow: *{{ $json.body.metadata.workflowName }}*  (`{{ $json.body.metadata.workflowId }}`)\nExecution: `{{ $json.body.metadata.executionId }}`\nFailing node: *{{ $json.body.metadata.nodeName }}*\nDuration: {{ $json.body.timing?.durationMs }} ms — items: {{ $json.body.timing?.itemCount }}\nError: ```{{ JSON.stringify($json.body.errors, null, 2).slice(0, 900) }}```",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-format",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": ""
+        },
+        "text": "={{ $json.formattedMessage }}",
+        "otherOptions": {}
+      },
+      "id": "slack-post",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [900, 700]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          { "node": "Example HTTP Request", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Example HTTP Request": {
+      "main": [
+        [
+          { "node": "Example Transform", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Example Transform": {
+      "main": [
+        [
+          { "node": "Org21-Observer", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Observer Webhook": {
+      "main": [
+        [
+          { "node": "Has errors?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Has errors?": {
+      "main": [
+        [
+          { "node": "Format Alert", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [
+          { "node": "Post to Slack", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "observability" },
+    { "name": "alerting" },
+    { "name": "slack" }
+  ],
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "versionId": ""
+}
