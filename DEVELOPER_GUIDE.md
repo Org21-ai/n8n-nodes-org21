@@ -13,19 +13,20 @@ Guide for developing, testing, and publishing the Org21 n8n community node packa
 ```
 n8n-nodes-org21/
 ├── credentials/
-│   ├── Org21Api.credentials.ts   # Credential definition (Keycloak / API Key)
-│   └── org21.svg                 # Icon for credentials panel
+│   ├── Org21Api.credentials.ts                # Legacy n8n API-key credential (X-N8N-API-KEY)
+│   ├── Org21KeycloakOAuth2Api.credentials.ts  # Keycloak OAuth2 client_credentials (extends oAuth2Api)
+│   └── org21.svg                              # Icon for credentials panel
 ├── nodes/
-│   └── Formatter/
-│       ├── Formatter.node.ts     # Node logic (displayed as "Org21-Observer")
-│       ├── Formatter.node.json   # Codex metadata (categories, aliases)
-│       └── org21.svg             # Node icon
+│   └── FlowSniffer/
+│       ├── FlowSniffer.node.ts     # Node logic (export class Formatter, displayed as "Org21-Observer")
+│       ├── FlowSniffer.node.json   # Codex metadata (categories, aliases)
+│       └── org21.svg               # Node icon
 ├── icons/
-│   └── org21.svg                 # Source icon
-├── dist/                         # Build output (do not edit directly)
+│   └── org21.svg                   # Source icon
+├── dist/                           # Build output (do not edit directly)
 ├── package.json
 ├── tsconfig.json
-└── DEVELOPER_GUIDE.md            # This file
+└── DEVELOPER_GUIDE.md              # This file
 ```
 
 ## Setup (First Time)
@@ -65,7 +66,7 @@ The dev server stores its data in `~/.n8n-node-cli/.n8n/`.
 
 ### Changing the node display name
 
-Edit `nodes/Formatter/Formatter.node.ts`:
+Edit `nodes/FlowSniffer/FlowSniffer.node.ts`:
 - `displayName` — what appears in the n8n node panel
 - `defaults.name` — default label when dragging the node onto the canvas
 
@@ -73,14 +74,21 @@ Edit `nodes/Formatter/Formatter.node.ts`:
 
 ### Changing the icon
 
-1. Place the new SVG file in `nodes/Formatter/` (next to the `.ts` file)
+1. Place the new SVG file in `nodes/FlowSniffer/` (next to the `.ts` file)
 2. The SVG must be clean: no `<!DOCTYPE>`, use `px` not `pt`, keep dimensions small (e.g., `width="60" height="60"`)
-3. Update the `icon` field in `Formatter.node.ts` if the filename changed: `icon: 'file:yourIcon.svg'`
+3. Update the `icon` field in `FlowSniffer.node.ts` if the filename changed: `icon: 'file:yourIcon.svg'`
 4. Also place a copy in `credentials/` if you want the credentials panel to use the same icon
 
 ### Changing credentials
 
-Edit `credentials/Org21Api.credentials.ts`. The credential `name` (`org21Api`) is referenced in the node — keep them in sync.
+There are two credential types and they're independent:
+
+- **`credentials/Org21Api.credentials.ts`** — credential `name` is `org21Api`. Plain API-key credential (`X-N8N-API-KEY`) for the legacy n8n-API trigger mode.
+- **`credentials/Org21KeycloakOAuth2Api.credentials.ts`** — credential `name` is `org21KeycloakOAuth2Api`, `extends = ['oAuth2Api']`. The Keycloak path; n8n's OAuth2 framework handles the `client_credentials` token exchange and caching. The credential pre-fills `grantType`, `accessTokenUrl`, `authentication`, and `additionalBodyProperties` (for the `audience=api otel` body param) as `hidden` fields, exposing only `Keycloak URL`, `Realm`, `Client ID`, and `Client Secret` to the user.
+
+Both credential `name`s are referenced in `nodes/FlowSniffer/FlowSniffer.node.ts` (in the `credentials` array on the node description and in the `httpRequestWithAuthentication.call` sites) — keep them in sync. They're also listed in `package.json` under `n8n.credentials`.
+
+> Never call `httpRequest` after `getCredentials` in the same function — the `@n8n/community-nodes/no-http-request-with-manual-auth` lint rule flags it. Use `httpRequestWithAuthentication` instead, or extract any unauthenticated HTTP call into a top-level helper function (the rule is function-scoped). See `postWithoutAuth` in `FlowSniffer.node.ts` for the pattern.
 
 ### Adding or modifying Custom Fields
 
@@ -95,7 +103,7 @@ Type coercion happens in the `execute()` method under the `// ── Custom fiel
 
 ### Changing node behavior
 
-All logic is in `Formatter.node.ts` inside the `execute()` method.
+All logic is in `nodes/FlowSniffer/FlowSniffer.node.ts` inside the `execute()` method.
 
 ## Lint
 
@@ -165,4 +173,5 @@ Commit messages must include a Jira key (DEV-xxx) per SOC 2 compliance.
 | Node not appearing | Check `package.json` → `n8n.nodes` points to the correct `dist/` path. Rebuild and restart. |
 | Old version still showing | Delete `dist/`, rebuild, restart n8n. Clear browser cache. |
 | npm publish fails | Run `npm login` first. Ensure `version` in `package.json` is incremented. |
-| Credentials not connecting | Verify the `test` section in `Org21Api.credentials.ts` has correct URL patterns. |
+| Legacy API-key credential not connecting | Verify the `test` section in `Org21Api.credentials.ts` has correct URL patterns. |
+| Keycloak credential not connecting | Verify `Keycloak URL` + `Realm` resolve to a reachable `/realms/{realm}/protocol/openid-connect/token` endpoint and that the `Client ID` / `Client Secret` are valid client_credentials. n8n's oAuth2 framework reports the underlying error on first token fetch. |

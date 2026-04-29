@@ -2,39 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Formatter = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
-const TOKEN_REFRESH_BUFFER_MS = 60000;
-const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
-async function exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
-    const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
-    const response = await context.helpers.httpRequest({
+async function postWithoutAuth(context, url, payload, headers) {
+    await context.helpers.httpRequest({
         method: 'POST',
-        url: tokenUrl,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            grant_type: 'client_credentials',
-            client_id: clientId,
-            client_secret: clientSecret,
-            audience: 'api otel',
-        }).toString(),
+        url,
+        body: payload,
+        headers,
+        json: true,
     });
-    const expiresIn = response.expires_in || (DEFAULT_TOKEN_TTL_MS / 1000);
-    return {
-        accessToken: response.access_token,
-        expiresInMs: expiresIn * 1000,
-    };
-}
-async function getCachedKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
-    const staticData = context.getWorkflowStaticData('node');
-    const now = Date.now();
-    if (staticData.accessToken &&
-        typeof staticData.tokenExpiresAt === 'number' &&
-        staticData.tokenExpiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
-        return staticData.accessToken;
-    }
-    const { accessToken, expiresInMs } = await exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret);
-    staticData.accessToken = accessToken;
-    staticData.tokenExpiresAt = now + expiresInMs;
-    return accessToken;
 }
 class Formatter {
     constructor() {
@@ -54,11 +29,49 @@ class Formatter {
             usableAsTool: true,
             credentials: [
                 {
+                    name: 'org21KeycloakOAuth2Api',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            authMethod: ['keycloak'],
+                        },
+                    },
+                },
+                {
                     name: 'org21Api',
-                    required: false,
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            authMethod: ['apiKey'],
+                        },
+                    },
                 },
             ],
             properties: [
+                {
+                    displayName: 'Authentication',
+                    name: 'authMethod',
+                    type: 'options',
+                    options: [
+                        {
+                            name: 'None',
+                            value: 'none',
+                            description: 'Send the sub-flow request without authentication',
+                        },
+                        {
+                            name: 'Keycloak (OAuth2)',
+                            value: 'keycloak',
+                            description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
+                        },
+                        {
+                            name: 'N8n API Key (Legacy)',
+                            value: 'apiKey',
+                            description: 'Authenticate via n8n API key',
+                        },
+                    ],
+                    default: 'none',
+                    description: 'How to authenticate the outbound sub-flow request',
+                },
                 {
                     displayName: 'Trigger Mode',
                     name: 'triggerMode',
@@ -72,7 +85,7 @@ class Formatter {
                         {
                             name: 'N8n API',
                             value: 'n8nApi',
-                            description: 'Trigger a workflow execution via n8n internal API',
+                            description: 'Trigger a workflow execution via n8n internal API (requires API Key auth)',
                         },
                     ],
                     default: 'webhook',
@@ -228,6 +241,7 @@ class Formatter {
         var _a, _b, _c, _d;
         const items = this.getInputData();
         const startTime = Date.now();
+        const authMethod = this.getNodeParameter('authMethod', 0, 'none');
         const triggerMode = this.getNodeParameter('triggerMode', 0);
         const includeMetadata = this.getNodeParameter('includeMetadata', 0);
         const includeItemData = this.getNodeParameter('includeItemData', 0);
@@ -328,45 +342,17 @@ class Formatter {
                 headers[h.name] = h.value;
             }
         }
-        let credentials;
-        try {
-            credentials = await this.getCredentials('org21Api');
-        }
-        catch (error) {
-            const msg = error.message || '';
-            if (!msg.includes('No credentials') && !msg.includes('not configured') && !msg.includes('does not have')) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, {
-                    message: `Unexpected error loading credentials: ${msg}`,
-                });
-            }
-        }
-        if (credentials) {
-            const authMethod = credentials.authMethod || 'apiKey';
-            if (authMethod === 'keycloak') {
-                const keycloakUrl = credentials.keycloakUrl;
-                const realm = credentials.keycloakRealm || 'org21';
-                const clientId = credentials.keycloakClientId;
-                const clientSecret = credentials.keycloakClientSecret;
-                if (!keycloakUrl || !clientId || !clientSecret) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required');
-                }
-                const token = await getCachedKeycloakToken(this, keycloakUrl, realm, clientId, clientSecret);
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-            else {
-                if (credentials.apiKey) {
-                    headers['X-N8N-API-KEY'] = credentials.apiKey;
-                }
-            }
-        }
+        const credentialName = authMethod === 'keycloak' ? 'org21KeycloakOAuth2Api'
+            : authMethod === 'apiKey' ? 'org21Api'
+                : null;
         try {
             if (triggerMode === 'webhook') {
                 const webhookUrl = this.getNodeParameter('webhookUrl', 0);
                 if (!webhookUrl) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Webhook URL is required');
                 }
-                if (credentials) {
-                    await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
+                if (credentialName) {
+                    await this.helpers.httpRequestWithAuthentication.call(this, credentialName, {
                         method: 'POST',
                         url: webhookUrl,
                         body: payload,
@@ -375,13 +361,7 @@ class Formatter {
                     });
                 }
                 else {
-                    await this.helpers.httpRequest({
-                        method: 'POST',
-                        url: webhookUrl,
-                        body: payload,
-                        headers,
-                        json: true,
-                    });
+                    await postWithoutAuth(this, webhookUrl, payload, headers);
                 }
             }
             else {
@@ -389,21 +369,15 @@ class Formatter {
                 if (!workflowId) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Workflow ID is required');
                 }
-                if (!credentials) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Credentials are required for n8n API mode');
+                if (authMethod !== 'apiKey') {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'n8n API mode requires API Key authentication. Use Webhook mode for Keycloak auth.');
                 }
-                const authMethod = credentials.authMethod || 'apiKey';
-                let apiUrl;
-                if (authMethod === 'apiKey') {
-                    const baseUrl = (credentials.baseUrl || '').replace(/\/+$/, '');
-                    if (!baseUrl) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
-                    }
-                    apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
+                const apiCredentials = await this.getCredentials('org21Api');
+                const baseUrl = (apiCredentials.baseUrl || '').replace(/\/+$/, '');
+                if (!baseUrl) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
                 }
-                else {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.');
-                }
+                const apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
                 await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
                     method: 'POST',
                     url: apiUrl,
@@ -417,12 +391,10 @@ class Formatter {
             if (this.continueOnFail()) {
                 return [[{ json: { error: error.message, payload }, pairedItem: 0 }]];
             }
-            if (error instanceof n8n_workflow_1.NodeOperationError) {
+            if (error instanceof n8n_workflow_1.NodeOperationError || error instanceof n8n_workflow_1.NodeApiError) {
                 throw error;
             }
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, {
-                message: `Failed to trigger sub-flow: ${error.message}`,
-            });
+            throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
         }
         if (includeTiming && payload.timing) {
             payload.timing.triggerDurationMs = Date.now() - startTime;
