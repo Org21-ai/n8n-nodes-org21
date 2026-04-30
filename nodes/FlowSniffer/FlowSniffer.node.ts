@@ -30,7 +30,7 @@ async function postWithoutAuth(
 	});
 }
 
-export class Formatter implements INodeType {
+export class FlowSniffer implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Org21-Observer',
 		name: 'flowSniffer',

@@ -182,7 +182,7 @@ n8n-nodes-org21/
 │   └── org21.svg
 ├── nodes/
 │   └── FlowSniffer/
-│       ├── FlowSniffer.node.ts   Node logic (export class Formatter)
+│       ├── FlowSniffer.node.ts   Node logic (export class FlowSniffer)
 │       ├── FlowSniffer.node.json Codex metadata
 │       └── org21.svg
 ├── icons/org21.svg               Source icon

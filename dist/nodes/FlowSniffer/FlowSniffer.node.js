@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Formatter = void 0;
+exports.FlowSniffer = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 async function postWithoutAuth(context, url, payload, headers) {
     await context.helpers.httpRequest({
@@ -11,7 +11,7 @@ async function postWithoutAuth(context, url, payload, headers) {
         json: true,
     });
 }
-class Formatter {
+class FlowSniffer {
     constructor() {
         this.description = {
             displayName: 'Org21-Observer',
@@ -405,5 +405,5 @@ class Formatter {
         return [[{ json: payload }]];
     }
 }
-exports.Formatter = Formatter;
+exports.FlowSniffer = FlowSniffer;
 //# sourceMappingURL=FlowSniffer.node.js.map

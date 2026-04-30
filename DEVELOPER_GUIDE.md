@@ -18,7 +18,7 @@ n8n-nodes-org21/
 │   └── org21.svg                              # Icon for credentials panel
 ├── nodes/
 │   └── FlowSniffer/
-│       ├── FlowSniffer.node.ts     # Node logic (export class Formatter, displayed as "Org21-Observer")
+│       ├── FlowSniffer.node.ts     # Node logic (export class FlowSniffer, displayed as "Org21-Observer")
 │       ├── FlowSniffer.node.json   # Codex metadata (categories, aliases)
 │       └── org21.svg               # Node icon
 ├── icons/
