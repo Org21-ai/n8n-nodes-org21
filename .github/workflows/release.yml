@@ -19,6 +19,10 @@ jobs:
         with:
           node-version: 22
 
+      - run: npm install -g npm@latest
+
+      - run: npm --version
+
       - run: npm ci
 
       - run: npm run build
