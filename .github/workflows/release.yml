@@ -17,9 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - run: npm install -g npm@latest
+          node-version: 24
 
       - run: npm --version
 
