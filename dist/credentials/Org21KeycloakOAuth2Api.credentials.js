@@ -14,7 +14,7 @@ class Org21KeycloakOAuth2Api {
                 name: 'keycloakUrl',
                 type: 'string',
                 default: '',
-                placeholder: 'https://keycloak.org21.ai',
+                placeholder: 'https://auth.org21.ai',
                 required: true,
                 description: 'Base URL of the Keycloak server',
             },

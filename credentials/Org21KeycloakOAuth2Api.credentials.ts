@@ -13,7 +13,7 @@ export class Org21KeycloakOAuth2Api implements ICredentialType {
 			name: 'keycloakUrl',
 			type: 'string',
 			default: '',
-			placeholder: 'https://keycloak.org21.ai',
+			placeholder: 'https://auth.org21.ai',
 			required: true,
 			description: 'Base URL of the Keycloak server',
 		},
