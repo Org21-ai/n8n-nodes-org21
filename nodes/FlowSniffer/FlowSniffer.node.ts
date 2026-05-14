@@ -44,7 +44,13 @@ export class FlowSniffer implements INodeType {
 		},
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
-		usableAsTool: true,
+		usableAsTool: {
+			replacements: {
+				displayName: 'Org21-Observer (AI Tool)',
+				description:
+					'Trigger an Org21 sub-workflow and capture its metadata, logs, timing, and errors. Use when an agent needs to invoke another n8n workflow and inspect the result.',
+			},
+		},
 		credentials: [
 			{
 				name: 'org21KeycloakOAuth2Api',
