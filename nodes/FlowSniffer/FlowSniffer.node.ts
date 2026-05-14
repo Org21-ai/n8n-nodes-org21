@@ -89,21 +89,19 @@ export class FlowSniffer implements INodeType {
 						value: 'keycloak',
 						description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
 					},
-					{
-						name: 'N8n API Key (Deprecated)',
-						value: 'apiKey',
-						description:
-							'Deprecated. Use Keycloak (OAuth2) instead. Kept for backward compatibility with existing configs; will be removed in a future release.',
-					},
 				],
 				default: 'none',
 				description: 'How to authenticate the outbound sub-flow request',
 			},
 
 			// ── Deprecation notice (apiKey) ─────────────────────────────────────
+			// The 'apiKey' value is no longer in the options array above, so new
+			// users can't pick it. This notice only renders for existing workflows
+			// whose saved authMethod is still 'apiKey', telling them how to migrate.
+			// The execute() branch handling apiKey is retained for backward compat.
 			{
 				displayName:
-					'N8n API Key authentication is deprecated. Use Keycloak (OAuth2) instead — see the README for migration steps. This option will be removed in a future release.',
+					'N8n API Key authentication is no longer offered for new workflows. This existing config still runs, but please migrate by switching Authentication to Keycloak (OAuth2). See the README for migration steps.',
 				name: 'apiKeyDeprecationNotice',
 				type: 'notice',
 				default: '',
@@ -125,21 +123,18 @@ export class FlowSniffer implements INodeType {
 						value: 'webhook',
 						description: 'POST sniffed data to a sub-flow webhook URL',
 					},
-					{
-						name: 'N8n API (Deprecated)',
-						value: 'n8nApi',
-						description:
-							'Deprecated. Use Webhook POST instead. Kept for backward compatibility with existing configs; will be removed in a future release.',
-					},
 				],
 				default: 'webhook',
 				description: 'How to trigger the sub-flow',
 			},
 
 			// ── Deprecation notice (n8nApi) ─────────────────────────────────────
+			// Same pattern: 'n8nApi' is no longer in the options array, so the
+			// notice only renders for existing workflows whose saved triggerMode
+			// is still 'n8nApi'.
 			{
 				displayName:
-					'N8n API trigger mode is deprecated. Use Webhook POST instead — see the README for migration steps. This option will be removed in a future release.',
+					'N8n API trigger mode is no longer offered for new workflows. This existing config still runs, but please migrate by switching Trigger Mode to Webhook POST. See the README for migration steps.',
 				name: 'n8nApiDeprecationNotice',
 				type: 'notice',
 				default: '',

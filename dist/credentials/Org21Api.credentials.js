@@ -4,7 +4,7 @@ exports.Org21Api = void 0;
 class Org21Api {
     constructor() {
         this.name = 'org21Api';
-        this.displayName = 'Org21 Legacy API (Deprecated)';
+        this.displayName = 'Org21 Legacy (Deprecated) API';
         this.icon = 'file:org21.svg';
         this.documentationUrl = 'https://docs.n8n.io/api/authentication/';
         this.authenticate = {

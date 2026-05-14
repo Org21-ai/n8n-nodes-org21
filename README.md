@@ -77,7 +77,7 @@ The node ships two credential types and a node-level `Authentication` selector t
 | ------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `none` *(default)*       | —                                                                       | —                                                         | Unauthenticated webhook POST. Useful for fire-and-forget local sub-flows.              |
 | `keycloak`               | **`Org21 Keycloak OAuth2 API`** (`org21KeycloakOAuth2Api`, extends `oAuth2Api`) | `credentials/Org21KeycloakOAuth2Api.credentials.ts`       | Webhook mode against the Org21 OTEL ingestion path. OAuth2 `client_credentials` flow.  |
-| `apiKey` *(deprecated)*  | **`Org21 Legacy API (Deprecated)`** (`org21Api`)                        | `credentials/Org21Api.credentials.ts`                     | n8n API trigger mode against a self-hosted n8n; not for Org21 metric ingest. Will be removed in a future release — migrate to `keycloak`. |
+| `apiKey` *(deprecated, hidden in v0.3.0)* | **`Org21 Legacy (Deprecated) API`** (`org21Api`)                        | `credentials/Org21Api.credentials.ts`                     | n8n API trigger mode against a self-hosted n8n; not for Org21 metric ingest. No longer offered for new workflows from v0.3.0; existing configs still run. Migrate to `keycloak`. |
 
 The Keycloak token exchange is delegated entirely to n8n's built-in oAuth2 framework via `httpRequestWithAuthentication` — n8n handles token fetch, caching, refresh, and audit logging. The credential pre-fills the standard `oAuth2Api` fields:
 
