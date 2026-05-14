@@ -21,6 +21,7 @@ class FlowSniffer {
             version: 1,
             subtitle: '={{$parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
             description: 'Sniff workflow metadata, logs, timing, and errors, then trigger a sub-flow via webhook or n8n API',
+            documentationUrl: 'https://github.com/Org21-ai/n8n-nodes-org21#readme',
             defaults: {
                 name: 'Org21-Observer',
             },
@@ -28,7 +29,7 @@ class FlowSniffer {
             outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             usableAsTool: {
                 replacements: {
-                    displayName: 'Org21-Observer (AI Tool)',
+                    displayName: 'Org21-Observer-for-AI-agent-node',
                     description: 'Trigger an Org21 sub-workflow and capture its metadata, logs, timing, and errors. Use when an agent needs to invoke another n8n workflow and inspect the result.',
                 },
             },
