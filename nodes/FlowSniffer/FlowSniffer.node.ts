@@ -90,13 +90,28 @@ export class FlowSniffer implements INodeType {
 						description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
 					},
 					{
-						name: 'N8n API Key (Legacy)',
+						name: 'N8n API Key (Deprecated)',
 						value: 'apiKey',
-						description: 'Authenticate via n8n API key',
+						description:
+							'Deprecated. Use Keycloak (OAuth2) instead. Kept for backward compatibility with existing configs; will be removed in a future release.',
 					},
 				],
 				default: 'none',
 				description: 'How to authenticate the outbound sub-flow request',
+			},
+
+			// ── Deprecation notice (apiKey) ─────────────────────────────────────
+			{
+				displayName:
+					'N8n API Key authentication is deprecated. Use Keycloak (OAuth2) instead — see the README for migration steps. This option will be removed in a future release.',
+				name: 'apiKeyDeprecationNotice',
+				type: 'notice',
+				default: '',
+				displayOptions: {
+					show: {
+						authMethod: ['apiKey'],
+					},
+				},
 			},
 
 			// ── Trigger mode ────────────────────────────────────────────────────
@@ -111,13 +126,28 @@ export class FlowSniffer implements INodeType {
 						description: 'POST sniffed data to a sub-flow webhook URL',
 					},
 					{
-						name: 'N8n API',
+						name: 'N8n API (Deprecated)',
 						value: 'n8nApi',
-						description: 'Trigger a workflow execution via n8n internal API (requires API Key auth)',
+						description:
+							'Deprecated. Use Webhook POST instead. Kept for backward compatibility with existing configs; will be removed in a future release.',
 					},
 				],
 				default: 'webhook',
 				description: 'How to trigger the sub-flow',
+			},
+
+			// ── Deprecation notice (n8nApi) ─────────────────────────────────────
+			{
+				displayName:
+					'N8n API trigger mode is deprecated. Use Webhook POST instead — see the README for migration steps. This option will be removed in a future release.',
+				name: 'n8nApiDeprecationNotice',
+				type: 'notice',
+				default: '',
+				displayOptions: {
+					show: {
+						triggerMode: ['n8nApi'],
+					},
+				},
 			},
 
 			// ── Webhook settings ────────────────────────────────────────────────

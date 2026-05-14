@@ -7,7 +7,7 @@ import type {
 
 export class Org21Api implements ICredentialType {
 	name = 'org21Api';
-	displayName = 'Org21 Legacy API';
+	displayName = 'Org21 Legacy API (Deprecated)';
 	icon = 'file:org21.svg' as const;
 	documentationUrl = 'https://docs.n8n.io/api/authentication/';
 	authenticate: IAuthenticateGeneric = {
