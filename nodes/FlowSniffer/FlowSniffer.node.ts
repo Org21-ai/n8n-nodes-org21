@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import type {
 	IDataObject,
 	IExecuteFunctions,
@@ -30,6 +31,125 @@ async function postWithoutAuth(
 	});
 }
 
+/**
+ * Encode a key/value into the OTLP/JSON `AnyValue` shape.
+ * Falls back to JSON-string for objects/arrays so the collector keeps a flat
+ * `KeyValue` list and we avoid `kvlistValue` complexity.
+ */
+function otlpAttr(key: string, value: unknown): { key: string; value: IDataObject } {
+	if (value === null || value === undefined) return { key, value: { stringValue: '' } };
+	if (typeof value === 'string') return { key, value: { stringValue: value } };
+	if (typeof value === 'boolean') return { key, value: { boolValue: value } };
+	if (typeof value === 'number') {
+		return Number.isInteger(value)
+			? { key, value: { intValue: String(value) } }
+			: { key, value: { doubleValue: value } };
+	}
+	return { key, value: { stringValue: JSON.stringify(value) } };
+}
+
+/**
+ * Build an OTLP/JSON ExportLogsServiceRequest or ExportTraceServiceRequest body
+ * for the Org21 metric-otel-collector (`/v1/logs` or `/v1/traces`,
+ * `Content-Type: application/json`).
+ *
+ * tenant_id is NOT stamped: the collector derives it from the validated JWT
+ * subject claim (the credential authenticates as a per-tenant service-account
+ * client), so any caller-supplied tenant_id would be overwritten or rejected.
+ * source=n8n on the resource lets dashboards filter by emitter.
+ */
+function buildOtlpPayload(
+	context: IExecuteFunctions,
+	signal: string,
+	payload: IDataObject,
+	startTimeMs: number,
+): IDataObject {
+	const nowNs = (Date.now() * 1_000_000).toString();
+	const startNs = (startTimeMs * 1_000_000).toString();
+	const workflow = context.getWorkflow();
+	const nodeName = context.getNode().name;
+	const executionId = context.getExecutionId();
+
+	const resourceAttrs = [
+		otlpAttr('source', 'n8n'),
+		otlpAttr('service.name', 'n8n'),
+		otlpAttr('telemetry.sdk.name', 'n8n-nodes-org21'),
+	];
+
+	const recordAttrs = [
+		otlpAttr('workflow.id', workflow.id ?? ''),
+		otlpAttr('workflow.name', workflow.name ?? ''),
+		otlpAttr('execution.id', executionId),
+		otlpAttr('node.name', nodeName),
+	];
+	if (payload.timing && typeof payload.timing === 'object') {
+		const t = payload.timing as IDataObject;
+		if (typeof t.inputItemCount === 'number') {
+			recordAttrs.push(otlpAttr('item.count', t.inputItemCount));
+		}
+	}
+	const hasErrors = Array.isArray(payload.errors) && payload.errors.length > 0;
+	if (hasErrors) {
+		recordAttrs.push(otlpAttr('error.count', (payload.errors as unknown[]).length));
+	}
+
+	const bodyStr = JSON.stringify(payload);
+
+	if (signal === 'traces') {
+		// 16-byte trace ID + 8-byte span ID per OTLP spec.
+		const traceId = randomBytes(16).toString('hex');
+		const spanId = randomBytes(8).toString('hex');
+		return {
+			resourceSpans: [
+				{
+					resource: { attributes: resourceAttrs },
+					scopeSpans: [
+						{
+							scope: { name: 'n8n-nodes-org21.flowSniffer' },
+							spans: [
+								{
+									traceId,
+									spanId,
+									name: `n8n.${nodeName}`,
+									kind: 1, // SPAN_KIND_INTERNAL
+									startTimeUnixNano: startNs,
+									endTimeUnixNano: nowNs,
+									attributes: [...recordAttrs, otlpAttr('payload', bodyStr)],
+									status: { code: hasErrors ? 2 : 0 }, // ERROR : UNSET
+								},
+							],
+						},
+					],
+				},
+			],
+		};
+	}
+
+	// Default: logs
+	return {
+		resourceLogs: [
+			{
+				resource: { attributes: resourceAttrs },
+				scopeLogs: [
+					{
+						scope: { name: 'n8n-nodes-org21.flowSniffer' },
+						logRecords: [
+							{
+								timeUnixNano: nowNs,
+								observedTimeUnixNano: nowNs,
+								severityNumber: hasErrors ? 17 : 9, // ERROR : INFO
+								severityText: hasErrors ? 'ERROR' : 'INFO',
+								body: { stringValue: bodyStr },
+								attributes: recordAttrs,
+							},
+						],
+					},
+				],
+			},
+		],
+	};
+}
+
 export class FlowSniffer implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Org21-Observer',
@@ -37,8 +157,8 @@ export class FlowSniffer implements INodeType {
 		icon: 'file:org21.svg',
 		group: ['transform'],
 		version: 1,
-		subtitle: '={{$parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
-		description: 'Sniff workflow metadata, logs, timing, and errors, then trigger a sub-flow via webhook or n8n API',
+		subtitle: '={{$parameter["triggerMode"] === "otlp" ? "OTLP " + ($parameter["otlpSignal"] || "logs") : $parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
+		description: 'Sniff workflow metadata, logs, timing, and errors. Export to the Org21 OTLP collector or trigger a sub-flow via webhook or n8n API.',
 		documentationUrl: 'https://github.com/Org21-ai/n8n-nodes-org21#readme',
 		defaults: {
 			name: 'Org21-Observer',
@@ -119,13 +239,78 @@ export class FlowSniffer implements INodeType {
 				type: 'options',
 				options: [
 					{
+						name: 'OTLP Export',
+						value: 'otlp',
+						description:
+							'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Keycloak (OAuth2) authentication.',
+					},
+					{
 						name: 'Webhook POST',
 						value: 'webhook',
 						description: 'POST sniffed data to a sub-flow webhook URL',
 					},
 				],
 				default: 'webhook',
-				description: 'How to trigger the sub-flow',
+				description: 'Where to send the sniffed payload',
+			},
+
+			// ── OTLP-mode auth notice ───────────────────────────────────────────
+			// OTLP export only works with Keycloak (OAuth2) auth — the Org21
+			// collector validates JWTs and derives tenant_id from the subject
+			// claim. Surface this in-UI so the misconfig is caught before run.
+			{
+				displayName:
+					'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication above to "Keycloak (OAuth2)" — the collector validates the JWT and derives tenant_id from it.',
+				name: 'otlpAuthNotice',
+				type: 'notice',
+				default: '',
+				displayOptions: {
+					show: {
+						triggerMode: ['otlp'],
+						authMethod: ['none', 'apiKey'],
+					},
+				},
+			},
+
+			// ── OTLP settings ───────────────────────────────────────────────────
+			{
+				displayName: 'Org21 OTLP Endpoint',
+				name: 'otlpEndpoint',
+				type: 'string',
+				default: 'https://otel.org21.ai',
+				required: true,
+				placeholder: 'https://otel.org21.ai',
+				description:
+					'Base URL of the Org21 OTLP collector. The signal-specific path (/v1/logs or /v1/traces) is appended automatically. Override only for BYOC deployments.',
+				displayOptions: {
+					show: {
+						triggerMode: ['otlp'],
+					},
+				},
+			},
+			{
+				displayName: 'OTLP Signal',
+				name: 'otlpSignal',
+				type: 'options',
+				options: [
+					{
+						name: 'Logs',
+						value: 'logs',
+						description: 'Emit one OTLP log record per execution (recommended for event-shaped telemetry)',
+					},
+					{
+						name: 'Traces',
+						value: 'traces',
+						description: 'Emit one OTLP span per execution (recommended for timing dashboards)',
+					},
+				],
+				default: 'logs',
+				description: 'Which OTLP signal type to export',
+				displayOptions: {
+					show: {
+						triggerMode: ['otlp'],
+					},
+				},
 			},
 
 			// ── Deprecation notice (n8nApi) ─────────────────────────────────────
@@ -424,7 +609,32 @@ export class FlowSniffer implements INodeType {
 
 		// ── Trigger sub-flow ────────────────────────────────────────────────
 		try {
-			if (triggerMode === 'webhook') {
+			if (triggerMode === 'otlp') {
+				if (authMethod !== 'keycloak') {
+					throw new NodeOperationError(
+						this.getNode(),
+						'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication to "Keycloak (OAuth2)" — the Org21 collector validates the JWT to attribute the tenant.',
+					);
+				}
+				const otlpEndpoint = ((this.getNodeParameter('otlpEndpoint', 0) as string) || '').replace(
+					/\/+$/,
+					'',
+				);
+				const otlpSignal = (this.getNodeParameter('otlpSignal', 0) as string) || 'logs';
+				if (!otlpEndpoint) {
+					throw new NodeOperationError(this.getNode(), 'Org21 OTLP Endpoint is required');
+				}
+				const otlpUrl = `${otlpEndpoint}/v1/${otlpSignal}`;
+				const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
+
+				await this.helpers.httpRequestWithAuthentication.call(this, 'org21KeycloakOAuth2Api', {
+					method: 'POST' as IHttpRequestMethods,
+					url: otlpUrl,
+					body: otlpBody,
+					headers: { ...headers, 'Content-Type': 'application/json' },
+					json: true,
+				});
+			} else if (triggerMode === 'webhook') {
 				const webhookUrl = this.getNodeParameter('webhookUrl', 0) as string;
 				if (!webhookUrl) {
 					throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
