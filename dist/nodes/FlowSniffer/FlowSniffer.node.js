@@ -160,16 +160,16 @@ class FlowSniffer {
                             description: 'Send the sub-flow request without authentication',
                         },
                         {
-                            name: 'Keycloak (OAuth2)',
+                            name: 'Org21 OAuth2',
                             value: 'keycloak',
-                            description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
+                            description: 'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
                         },
                     ],
                     default: 'none',
                     description: 'How to authenticate the outbound sub-flow request',
                 },
                 {
-                    displayName: 'N8n API Key authentication is no longer offered for new workflows. This existing config still runs, but please migrate by switching Authentication to Keycloak (OAuth2). See the README for migration steps.',
+                    displayName: 'N8n API Key authentication is no longer offered for new workflows. This existing config still runs, but please migrate by switching Authentication to Org21 OAuth2. See the README for migration steps.',
                     name: 'apiKeyDeprecationNotice',
                     type: 'notice',
                     default: '',
@@ -187,7 +187,7 @@ class FlowSniffer {
                         {
                             name: 'OTLP Export',
                             value: 'otlp',
-                            description: 'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Keycloak (OAuth2) authentication.',
+                            description: 'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Org21 OAuth2 authentication.',
                         },
                         {
                             name: 'Webhook POST',
@@ -199,7 +199,7 @@ class FlowSniffer {
                     description: 'Where to send the sniffed payload',
                 },
                 {
-                    displayName: 'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication above to "Keycloak (OAuth2)" — the collector validates the JWT and derives tenant_id from it.',
+                    displayName: 'OTLP Export requires Org21 OAuth2 authentication. Set Authentication above to "Org21 OAuth2" — the collector validates the JWT and derives tenant_id from it.',
                     name: 'otlpAuthNotice',
                     type: 'notice',
                     default: '',
@@ -516,7 +516,7 @@ class FlowSniffer {
         try {
             if (triggerMode === 'otlp') {
                 if (authMethod !== 'keycloak') {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication to "Keycloak (OAuth2)" — the Org21 collector validates the JWT to attribute the tenant.');
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'OTLP Export requires Org21 OAuth2 authentication. Set Authentication to "Org21 OAuth2" — the Org21 collector validates the JWT to attribute the tenant.');
                 }
                 const otlpEndpoint = (this.getNodeParameter('otlpEndpoint', 0) || '').replace(/\/+$/, '');
                 const otlpSignal = this.getNodeParameter('otlpSignal', 0) || 'logs';
@@ -557,7 +557,7 @@ class FlowSniffer {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Workflow ID is required');
                 }
                 if (authMethod !== 'apiKey') {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'n8n API mode requires API Key authentication. Use Webhook mode for Keycloak auth.');
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'n8n API mode requires API Key authentication. Use Webhook mode for Org21 OAuth2 auth.');
                 }
                 const apiCredentials = await this.getCredentials('org21Api');
                 const baseUrl = (apiCredentials.baseUrl || '').replace(/\/+$/, '');

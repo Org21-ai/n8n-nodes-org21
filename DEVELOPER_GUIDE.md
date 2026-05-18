@@ -14,7 +14,7 @@ Guide for developing, testing, and publishing the Org21 n8n community node packa
 n8n-nodes-org21/
 ├── credentials/
 │   ├── Org21Api.credentials.ts                # Legacy n8n API-key credential (X-N8N-API-KEY)
-│   ├── Org21KeycloakOAuth2Api.credentials.ts  # Keycloak OAuth2 client_credentials (extends oAuth2Api)
+│   ├── Org21KeycloakOAuth2Api.credentials.ts  # Org21 OAuth2 client_credentials (extends oAuth2Api; file name retained for storage-id compat)
 │   └── org21.svg                              # Icon for credentials panel
 ├── nodes/
 │   └── FlowSniffer/
@@ -84,7 +84,7 @@ Edit `nodes/FlowSniffer/FlowSniffer.node.ts`:
 There are two credential types and they're independent:
 
 - **`credentials/Org21Api.credentials.ts`** — credential `name` is `org21Api`. Plain API-key credential (`X-N8N-API-KEY`) for the legacy n8n-API trigger mode.
-- **`credentials/Org21KeycloakOAuth2Api.credentials.ts`** — credential `name` is `org21KeycloakOAuth2Api`, `extends = ['oAuth2Api']`. The Keycloak path; n8n's OAuth2 framework handles the `client_credentials` token exchange and caching. The credential pre-fills `grantType`, `accessTokenUrl`, `authentication`, and `additionalBodyProperties` (for the `audience=api otel` body param) as `hidden` fields, exposing only `Keycloak URL`, `Realm`, `Client ID`, and `Client Secret` to the user.
+- **`credentials/Org21KeycloakOAuth2Api.credentials.ts`** — credential `name` is `org21KeycloakOAuth2Api` (storage identifier; do NOT rename), `extends = ['oAuth2Api']`. The Org21 OAuth2 path; n8n's OAuth2 framework handles the `client_credentials` token exchange and caching. The credential pre-fills `grantType`, `accessTokenUrl`, `authentication`, and `additionalBodyProperties` (for the `audience=api otel` body param) as `hidden` fields, exposing only `Auth URL`, `Realm`, `Client ID`, and `Client Secret` to the user. (The customer-facing class `displayName` is `Org21 OAuth2 API` — the Keycloak-derived `name` is kept only because it's persisted on every existing customer credential.)
 
 Both credential `name`s are referenced in `nodes/FlowSniffer/FlowSniffer.node.ts` (in the `credentials` array on the node description and in the `httpRequestWithAuthentication.call` sites) — keep them in sync. They're also listed in `package.json` under `n8n.credentials`.
 
@@ -174,4 +174,4 @@ Commit messages must include a Jira key (DEV-xxx) per SOC 2 compliance.
 | Old version still showing | Delete `dist/`, rebuild, restart n8n. Clear browser cache. |
 | npm publish fails | Run `npm login` first. Ensure `version` in `package.json` is incremented. |
 | Legacy API-key credential not connecting | Verify the `test` section in `Org21Api.credentials.ts` has correct URL patterns. |
-| Keycloak credential not connecting | Verify `Keycloak URL` + `Realm` resolve to a reachable `/realms/{realm}/protocol/openid-connect/token` endpoint and that the `Client ID` / `Client Secret` are valid client_credentials. n8n's oAuth2 framework reports the underlying error on first token fetch. |
+| Org21 OAuth2 credential not connecting | Verify `Auth URL` + `Realm` resolve to a reachable `/realms/{realm}/protocol/openid-connect/token` endpoint and that the `Client ID` / `Client Secret` are valid client_credentials. n8n's oAuth2 framework reports the underlying error on first token fetch. |

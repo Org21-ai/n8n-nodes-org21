@@ -5,18 +5,18 @@ class Org21KeycloakOAuth2Api {
     constructor() {
         this.name = 'org21KeycloakOAuth2Api';
         this.extends = ['oAuth2Api'];
-        this.displayName = 'Org21 Keycloak OAuth2 API';
+        this.displayName = 'Org21 OAuth2 API';
         this.icon = 'file:org21.svg';
         this.documentationUrl = 'https://docs.n8n.io/integrations/builtin/credentials/oauth2/';
         this.properties = [
             {
-                displayName: 'Keycloak URL',
+                displayName: 'Auth URL',
                 name: 'keycloakUrl',
                 type: 'string',
                 default: 'https://auth.org21.ai',
                 placeholder: 'https://auth.org21.ai',
                 required: true,
-                description: 'Base URL of the Org21 Keycloak server. Override only for BYOC or staging environments.',
+                description: 'Base URL of the Org21 authentication server. Override only for BYOC or staging environments.',
             },
             {
                 displayName: 'Realm',
@@ -24,7 +24,7 @@ class Org21KeycloakOAuth2Api {
                 type: 'string',
                 default: 'global-customers',
                 required: true,
-                description: 'Keycloak realm. Customer service-account clients (metric-ingest-*) live in `global-customers`; override only for internal Org21 testing.',
+                description: 'Auth realm. Customer service-account clients (metric-ingest-*) live in `global-customers`; override only for internal Org21 testing.',
             },
             {
                 displayName: 'Grant Type',

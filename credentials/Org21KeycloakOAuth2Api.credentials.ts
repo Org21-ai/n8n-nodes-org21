@@ -1,21 +1,28 @@
 import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class Org21KeycloakOAuth2Api implements ICredentialType {
+	// `name` is the credential-type identifier persisted on every saved
+	// customer credential record — do NOT rename, even though the public-
+	// facing `displayName` no longer mentions Keycloak (DEV-458).
 	name = 'org21KeycloakOAuth2Api';
 	extends = ['oAuth2Api'];
-	displayName = 'Org21 Keycloak OAuth2 API';
+	displayName = 'Org21 OAuth2 API';
 	icon = 'file:org21.svg' as const;
 	documentationUrl = 'https://docs.n8n.io/integrations/builtin/credentials/oauth2/';
 
 	properties: INodeProperties[] = [
 		{
-			displayName: 'Keycloak URL',
+			displayName: 'Auth URL',
+			// `name` keys (keycloakUrl / keycloakRealm) are persisted in n8n's
+			// credential storage. Kept as-is so existing saved credentials
+			// keep working; only the customer-facing displayName/description
+			// strings change (DEV-458).
 			name: 'keycloakUrl',
 			type: 'string',
 			default: 'https://auth.org21.ai',
 			placeholder: 'https://auth.org21.ai',
 			required: true,
-			description: 'Base URL of the Org21 Keycloak server. Override only for BYOC or staging environments.',
+			description: 'Base URL of the Org21 authentication server. Override only for BYOC or staging environments.',
 		},
 		{
 			displayName: 'Realm',
@@ -23,7 +30,7 @@ export class Org21KeycloakOAuth2Api implements ICredentialType {
 			type: 'string',
 			default: 'global-customers',
 			required: true,
-			description: 'Keycloak realm. Customer service-account clients (metric-ingest-*) live in `global-customers`; override only for internal Org21 testing.',
+			description: 'Auth realm. Customer service-account clients (metric-ingest-*) live in `global-customers`; override only for internal Org21 testing.',
 		},
 		{
 			displayName: 'Grant Type',
@@ -64,8 +71,9 @@ export class Org21KeycloakOAuth2Api implements ICredentialType {
 			default: true,
 		},
 		{
-			// Keycloak's client_credentials grant accepts `audience` as an extra body
-			// param to scope the issued JWT to specific audiences (here: api + otel).
+			// The Org21 auth server's client_credentials grant accepts `audience`
+			// as an extra body param to scope the issued JWT to specific audiences
+			// (here: api + otel — matches what the OTLP collector validates).
 			displayName: 'Additional Body Properties',
 			name: 'additionalBodyProperties',
 			type: 'hidden',

@@ -41,7 +41,7 @@ npm install n8n-nodes-org21
 # then restart n8n
 ```
 
-For end-to-end setup against an Org21 tenant (Keycloak realm, Key Service per-workflow secret, sub-flow URL), follow:
+For end-to-end setup against an Org21 tenant (OAuth2 realm, Key Service per-workflow secret, sub-flow URL), follow:
 
 > https://github.com/Org21-ai/architecture/blob/main/guides/n8n-nodes-installation-guide.md
 
@@ -76,25 +76,25 @@ The node ships two credential types and a node-level `Authentication` selector t
 | Node `authMethod`        | Credential type (n8n name)                                              | Defined in                                                | Used by                                                                                |
 | ------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `none` *(default)*       | —                                                                       | —                                                         | Unauthenticated webhook POST. Useful for fire-and-forget local sub-flows.              |
-| `keycloak`               | **`Org21 Keycloak OAuth2 API`** (`org21KeycloakOAuth2Api`, extends `oAuth2Api`) | `credentials/Org21KeycloakOAuth2Api.credentials.ts`       | Webhook mode against the Org21 OTEL ingestion path. OAuth2 `client_credentials` flow.  |
+| `keycloak`               | **`Org21 OAuth2 API`** (`org21KeycloakOAuth2Api`, extends `oAuth2Api`) | `credentials/Org21KeycloakOAuth2Api.credentials.ts`       | Webhook mode against the Org21 OTEL ingestion path. OAuth2 `client_credentials` flow.  |
 | `apiKey` *(deprecated, hidden in v0.3.0)* | **`Org21 Legacy (Deprecated) API`** (`org21Api`)                        | `credentials/Org21Api.credentials.ts`                     | n8n API trigger mode against a self-hosted n8n; not for Org21 metric ingest. No longer offered for new workflows from v0.3.0; existing configs still run. Migrate to `keycloak`. |
 
-The Keycloak token exchange is delegated entirely to n8n's built-in oAuth2 framework via `httpRequestWithAuthentication` — n8n handles token fetch, caching, refresh, and audit logging. The credential pre-fills the standard `oAuth2Api` fields:
+The OAuth2 token exchange is delegated entirely to n8n's built-in oAuth2 framework via `httpRequestWithAuthentication` — n8n handles token fetch, caching, refresh, and audit logging. The credential pre-fills the standard `oAuth2Api` fields:
 
 - `grantType: 'clientCredentials'`
-- `accessTokenUrl` computed from `Keycloak URL` + `Realm`: `{keycloakUrl}/realms/{realm}/protocol/openid-connect/token`
-- `authentication: 'body'` (Keycloak prefers form-body client auth)
+- `accessTokenUrl` computed from `Auth URL` + `Realm`: `{authUrl}/realms/{realm}/protocol/openid-connect/token`
+- `authentication: 'body'` (the Org21 auth server expects form-body client auth)
 - `sendAdditionalBodyProperties: true` with `additionalBodyProperties: '{"audience":"api otel"}'` — the same audience scoping the previous inline implementation used. n8n forwards this to `client-oauth2` (see `n8n-core/dist/execution-engine/.../request-helper-functions.js::createOAuth2Client`).
 
-Outgoing requests get `Authorization: Bearer <jwt>` (auto-injected by n8n) and `X-Org21-Source: formatter` (added by the node). User-facing fields on the credential are just `Keycloak URL` (default `https://auth.org21.ai`), `Realm` (default `global-customers`), `Client ID`, and `Client Secret`.
+Outgoing requests get `Authorization: Bearer <jwt>` (auto-injected by n8n) and `X-Org21-Source: formatter` (added by the node). User-facing fields on the credential are just `Auth URL` (default `https://auth.org21.ai`), `Realm` (default `global-customers`), `Client ID`, and `Client Secret`.
 
 `Client ID` / `Client Secret` are issued per-workflow by the Org21 **Key Service** (placeholder shown in the credential UI: `sa-acme-corp__my-workflow`), so a leaked secret only blasts a single workflow. The OAuth2 token has `aud=metric-ingest` (also `api`) so the `otel-collector` accepts it on the metric-ingest path; the alternative static `sk_otel_s1_*` bearer (via `otel-auth-proxy`) is not used here — n8n always uses OAuth2 client_credentials.
 
-The legacy API-key credential test pings `GET {baseUrl}/api/v1/workflows`. The Keycloak credential is validated implicitly by n8n's oAuth2 framework on first token fetch.
+The legacy API-key credential test pings `GET {baseUrl}/api/v1/workflows`. The OAuth2 credential is validated implicitly by n8n's oAuth2 framework on first token fetch.
 
 The **OTEL endpoint** itself is not configured on the node — it is the Webhook URL, which by convention points at a sub-flow that forwards into the Org21 collector. The collector authenticates the Bearer the Observer attaches.
 
-> **Migration from 0.1.x.** The pre-0.2.0 `org21Api` credential carried both auth modes inside an `Auth Method` field on the credential itself, with hand-rolled Keycloak token exchange in the node. After 0.2.0, the Keycloak fields are gone from `org21Api`; existing Keycloak users must create a new `Org21 Keycloak OAuth2 API` credential, re-enter `Keycloak URL` / `Realm` / `Client ID` / `Client Secret`, and pick `Authentication: Keycloak (OAuth2)` on the node.
+> **Migration from 0.1.x.** The pre-0.2.0 `org21Api` credential carried both auth modes inside an `Auth Method` field on the credential itself, with a hand-rolled OAuth2 token exchange in the node. After 0.2.0, the OAuth2 fields are gone from `org21Api`; existing customers must create a new `Org21 OAuth2 API` credential, re-enter `Auth URL` / `Realm` / `Client ID` / `Client Secret`, and pick `Authentication: Org21 OAuth2` on the node.
 
 ## Public surface (nodes published, parameters)
 
@@ -149,7 +149,7 @@ Outbound payload shape (any subset, depending on toggles):
 }
 ```
 
-Outbound headers (always): `Content-Type: application/json`, `X-Org21-Source: formatter`. Plus `Authorization: Bearer <jwt>` when Keycloak auth is configured, or `X-N8N-API-KEY` for legacy API-key mode.
+Outbound headers (always): `Content-Type: application/json`, `X-Org21-Source: formatter`. Plus `Authorization: Bearer <jwt>` when Org21 OAuth2 auth is configured, or `X-N8N-API-KEY` for legacy API-key mode.
 
 ### Codex metadata (`FlowSniffer.node.json`)
 
@@ -170,7 +170,7 @@ The Observer itself emits a generic JSON envelope (above). The downstream sub-fl
   2. `output_tokens`
   3. `cache_read_input_tokens`
   4. `cache_creation_input_tokens`
-- Authenticated as a Keycloak service account with `aud=metric-ingest`.
+- Authenticated as an Org21 OAuth2 service account with `aud=metric-ingest`.
 
 ## Layout
 
@@ -178,7 +178,7 @@ The Observer itself emits a generic JSON envelope (above). The downstream sub-fl
 n8n-nodes-org21/
 ├── credentials/
 │   ├── Org21Api.credentials.ts                Legacy n8n API-key credential
-│   ├── Org21KeycloakOAuth2Api.credentials.ts  Keycloak OAuth2 client_credentials (extends oAuth2Api)
+│   ├── Org21KeycloakOAuth2Api.credentials.ts  Org21 OAuth2 client_credentials (extends oAuth2Api; file name retained for storage-id compat)
 │   └── org21.svg
 ├── nodes/
 │   └── FlowSniffer/
@@ -221,14 +221,14 @@ CI runs `npm ci && npm run build && npm run lint` on `v*` tag pushes (`.github/w
 - **Versioning** — semver in `package.json`. Tag `vX.Y.Z` to trigger the npm publish workflow.
 - **Icons** — clean SVGs (no `<!DOCTYPE>`, `px` not `pt`), placed alongside the `.ts` file and referenced via `icon: 'file:org21.svg'`.
 - **`dist/` is the only published artifact** (`"files": ["dist"]`).
-- **Auth defaults to `none` on the node** — production deployments must explicitly pick `Keycloak (OAuth2)` and attach an `Org21 Keycloak OAuth2 API` credential with a per-workflow Key Service secret. The deprecated `apiKey` auth + `n8nApi` trigger mode are kept only for backward compatibility with existing self-hosted-n8n configurations and will be removed in a future release.
-- **Always use `https://auth.org21.ai`** as the Keycloak issuer (public hostname) when validating Bearers downstream — even from inside the cluster.
+- **Auth defaults to `none` on the node** — production deployments must explicitly pick `Org21 OAuth2` and attach an `Org21 OAuth2 API` credential with a per-workflow Key Service secret. The deprecated `apiKey` auth + `n8nApi` trigger mode are kept only for backward compatibility with existing self-hosted-n8n configurations and will be removed in a future release.
+- **Always use `https://auth.org21.ai`** as the OAuth2 issuer (public hostname) when validating Bearers downstream — even from inside the cluster.
 
 ## Related
 
 - `Org21-ai/architecture` — `PLATFORM_OVERVIEW.md` (Flow Sniffer placement in the n8n tier), chapter 02 (data-plane / OTEL), `guides/n8n-nodes-installation-guide.md` (end-user setup).
 - `Org21-ai/pipelines` — reusable `standard-ci.yml` and `jira-check.yml` workflows; this repo only consumes `jira-check.yml`.
-- `Org21-ai/otel-collector`, `otel-auth-proxy` — receive the metrics this node emits; honor `aud=metric-ingest` Keycloak JWTs.
+- `Org21-ai/otel-collector`, `otel-auth-proxy` — receive the metrics this node emits; honor `aud=metric-ingest` OAuth2 JWTs.
 - `Org21-ai/ingest-metrics`, `Org21-ai/query-platform` — downstream of the collector; convert Observer events into the AI-spend metric model.
 - `Org21-ai/architecture/CICD_new_repo.md` — repo-bootstrapping conventions referenced by this package's CI.
 - npm: https://www.npmjs.com/package/n8n-nodes-org21
