@@ -4,8 +4,8 @@ exports.Formatter = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const TOKEN_REFRESH_BUFFER_MS = 60000;
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
-async function exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
-    const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+async function exchangeAuthToken(context, authUrl, realm, clientId, clientSecret) {
+    const tokenUrl = `${authUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
     const response = await context.helpers.httpRequest({
         method: 'POST',
         url: tokenUrl,
@@ -22,7 +22,7 @@ async function exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clie
         expiresInMs: expiresIn * 1000,
     };
 }
-async function getCachedKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret) {
+async function getCachedAuthToken(context, authUrl, realm, clientId, clientSecret) {
     const staticData = context.getWorkflowStaticData('node');
     const now = Date.now();
     if (staticData.accessToken &&
@@ -30,7 +30,7 @@ async function getCachedKeycloakToken(context, keycloakUrl, realm, clientId, cli
         staticData.tokenExpiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
         return staticData.accessToken;
     }
-    const { accessToken, expiresInMs } = await exchangeKeycloakToken(context, keycloakUrl, realm, clientId, clientSecret);
+    const { accessToken, expiresInMs } = await exchangeAuthToken(context, authUrl, realm, clientId, clientSecret);
     staticData.accessToken = accessToken;
     staticData.tokenExpiresAt = now + expiresInMs;
     return accessToken;
@@ -465,14 +465,14 @@ class Formatter {
         if (credentials) {
             const authMethod = credentials.authMethod || 'apiKey';
             if (authMethod === 'keycloak') {
-                const keycloakUrl = credentials.keycloakUrl;
-                const realm = credentials.keycloakRealm || 'org21';
+                const authUrl = credentials.keycloakUrl;
+                const realm = credentials.keycloakRealm || 'global-customers';
                 const clientId = credentials.keycloakClientId;
                 const clientSecret = credentials.keycloakClientSecret;
-                if (!keycloakUrl || !clientId || !clientSecret) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required');
+                if (!authUrl || !clientId || !clientSecret) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Service-key credentials incomplete: Auth URL, Client ID, and Client Secret are required');
                 }
-                const token = await getCachedKeycloakToken(this, keycloakUrl, realm, clientId, clientSecret);
+                const token = await getCachedAuthToken(this, authUrl, realm, clientId, clientSecret);
                 headers['Authorization'] = `Bearer ${token}`;
             }
             else {
@@ -489,10 +489,10 @@ class Formatter {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Org21 OTLP Endpoint is required');
                 }
                 if (!credentials) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Credentials are required for OTLP export (use Keycloak auth method).');
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Credentials are required for OTLP export (use the Org21 Service Key auth method).');
                 }
                 if (credentials.authMethod !== 'keycloak') {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'OTLP export requires Keycloak auth. Set the credential’s Auth Method to "Keycloak Service Key".');
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'OTLP export requires service-key auth. Set the credential’s Auth Method to "Org21 Service Key".');
                 }
                 const otlpUrl = `${otlpEndpoint}/v1/${otlpSignal}`;
                 const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
@@ -522,7 +522,7 @@ class Formatter {
                     apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
                 }
                 else {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.');
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Org21 Service Key auth is for OTLP export. For n8n API mode, switch the credential to API Key (Legacy).');
                 }
                 await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
                     method: 'POST',

@@ -11,25 +11,26 @@ import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 /** Buffer before token expiry to trigger refresh (60 seconds). */
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 
-/** Default token TTL if not returned by Keycloak (30 minutes). */
+/** Default token TTL if not returned by the auth server (30 minutes). */
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 /**
- * Exchange Keycloak client credentials for a JWT access token.
+ * Exchange service-key client credentials for a JWT access token via the
+ * Org21 auth server (OAuth2 client_credentials grant).
  *
- * The token's audience comes from the client's default scopes in Keycloak
- * (for tenant-manager-minted api-keys this is `metric-ingest`, set by the
- * `metric-ingest-scope` audience mapper attached at client creation). We do
- * NOT request a specific `audience` here — Keycloak emits the configured one.
+ * The token's audience comes from the client's default scopes set up by
+ * tenant-manager at key creation (audience `metric-ingest` via the
+ * `metric-ingest-scope` audience mapper). We do NOT request a specific
+ * `audience` here — the auth server emits the configured one.
  */
-async function exchangeKeycloakToken(
+async function exchangeAuthToken(
 	context: IExecuteFunctions,
-	keycloakUrl: string,
+	authUrl: string,
 	realm: string,
 	clientId: string,
 	clientSecret: string,
 ): Promise<{ accessToken: string; expiresInMs: number }> {
-	const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+	const tokenUrl = `${authUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
 
 	// n8n's helpers.httpRequest will URL-encode an object body when
 	// Content-Type is application/x-www-form-urlencoded, so we pass an object
@@ -55,12 +56,12 @@ async function exchangeKeycloakToken(
 }
 
 /**
- * Get a cached Keycloak JWT or exchange credentials for a fresh one.
+ * Get a cached service-key JWT or exchange credentials for a fresh one.
  * Uses n8n's getWorkflowStaticData() to persist the token between executions.
  */
-async function getCachedKeycloakToken(
+async function getCachedAuthToken(
 	context: IExecuteFunctions,
-	keycloakUrl: string,
+	authUrl: string,
 	realm: string,
 	clientId: string,
 	clientSecret: string,
@@ -78,9 +79,9 @@ async function getCachedKeycloakToken(
 	}
 
 	// Token missing or expired — exchange for a new one
-	const { accessToken, expiresInMs } = await exchangeKeycloakToken(
+	const { accessToken, expiresInMs } = await exchangeAuthToken(
 		context,
-		keycloakUrl,
+		authUrl,
 		realm,
 		clientId,
 		clientSecret,
@@ -561,7 +562,7 @@ export class Formatter implements INodeType {
 			}
 		}
 
-		// ── Resolve auth (Keycloak Bearer or legacy API key) ────────────────
+		// ── Resolve auth (service-key Bearer or legacy API key) ─────────────
 		let credentials: IDataObject | undefined;
 		try {
 			credentials = await this.getCredentials('org21Api') as IDataObject;
@@ -576,24 +577,28 @@ export class Formatter implements INodeType {
 		}
 
 		if (credentials) {
+			// Persisted credential field keys (keycloakUrl/keycloakRealm/...)
+			// retain the legacy `keycloak*` names so existing saved credentials
+			// keep working. The UI labels are display-only and read "Auth URL"
+			// etc. — see Org21Api.credentials.ts.
 			const authMethod = (credentials.authMethod as string) || 'apiKey';
 
 			if (authMethod === 'keycloak') {
-				const keycloakUrl = credentials.keycloakUrl as string;
-				const realm = (credentials.keycloakRealm as string) || 'org21';
+				const authUrl = credentials.keycloakUrl as string;
+				const realm = (credentials.keycloakRealm as string) || 'global-customers';
 				const clientId = credentials.keycloakClientId as string;
 				const clientSecret = credentials.keycloakClientSecret as string;
 
-				if (!keycloakUrl || !clientId || !clientSecret) {
+				if (!authUrl || !clientId || !clientSecret) {
 					throw new NodeOperationError(
 						this.getNode(),
-						'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required',
+						'Service-key credentials incomplete: Auth URL, Client ID, and Client Secret are required',
 					);
 				}
 
-				const token = await getCachedKeycloakToken(
+				const token = await getCachedAuthToken(
 					this,
-					keycloakUrl,
+					authUrl,
 					realm,
 					clientId,
 					clientSecret,
@@ -618,13 +623,13 @@ export class Formatter implements INodeType {
 				if (!credentials) {
 					throw new NodeOperationError(
 						this.getNode(),
-						'Credentials are required for OTLP export (use Keycloak auth method).',
+						'Credentials are required for OTLP export (use the Org21 Service Key auth method).',
 					);
 				}
 				if ((credentials.authMethod as string) !== 'keycloak') {
 					throw new NodeOperationError(
 						this.getNode(),
-						'OTLP export requires Keycloak auth. Set the credential’s Auth Method to "Keycloak Service Key".',
+						'OTLP export requires service-key auth. Set the credential’s Auth Method to "Org21 Service Key".',
 					);
 				}
 
@@ -632,9 +637,9 @@ export class Formatter implements INodeType {
 				const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
 
 				// httpRequest (not httpRequestWithAuthentication) — Authorization
-				// is already set on `headers` above via the manual Keycloak path;
-				// the generic-auth helper would add legacy X-N8N-API-KEY headers
-				// that the OTLP collector doesn't expect.
+				// is already set on `headers` above via the manual service-key
+				// path; the generic-auth helper would add legacy X-N8N-API-KEY
+				// headers that the OTLP collector doesn't expect.
 				await this.helpers.httpRequest({
 					method: 'POST' as IHttpRequestMethods,
 					url: otlpUrl,
@@ -662,11 +667,10 @@ export class Formatter implements INodeType {
 					}
 					apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
 				} else {
-					// Keycloak mode — n8n API URL must come from webhook URL or be configured elsewhere
-					// In Keycloak mode the primary use case is webhook POST with Bearer token
+					// Service-key auth mode is for OTLP export, not the n8n API.
 					throw new NodeOperationError(
 						this.getNode(),
-						'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.',
+						'Org21 Service Key auth is for OTLP export. For n8n API mode, switch the credential to API Key (Legacy).',
 					);
 				}
 

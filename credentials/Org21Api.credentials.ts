@@ -26,9 +26,12 @@ export class Org21Api implements ICredentialType {
 			type: 'options',
 			options: [
 				{
-					name: 'Keycloak Service Key',
+					name: 'Org21 Service Key',
+					// Stored value retained as 'keycloak' for backward compat
+					// with existing credential records; do not rename.
 					value: 'keycloak',
-					description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
+					description:
+						'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
 				},
 				{
 					name: 'API Key (Legacy)',
@@ -39,14 +42,18 @@ export class Org21Api implements ICredentialType {
 			default: 'keycloak',
 			description: 'Authentication method to use',
 		},
-		// ── Keycloak fields ────────────────────────────────────────────────
+		// ── Service-key (OAuth2 client_credentials) fields ─────────────────
+		// Field `name:` keys (keycloakUrl/keycloakRealm/...) are persisted in
+		// n8n's credential storage. They're kept as-is so existing saved
+		// credentials don't break; only display strings change.
 		{
-			displayName: 'Keycloak URL',
+			displayName: 'Auth URL',
 			name: 'keycloakUrl',
 			type: 'string',
 			default: 'https://auth.org21.ai',
 			placeholder: 'https://auth.org21.ai',
-			description: 'Base URL of the Keycloak server. BYOC deployments override with their own.',
+			description:
+				'Base URL of the Org21 authentication server. BYOC deployments override with their own.',
 			displayOptions: {
 				show: {
 					authMethod: ['keycloak'],
@@ -59,7 +66,7 @@ export class Org21Api implements ICredentialType {
 			type: 'string',
 			default: 'global-customers',
 			description:
-				'Keycloak realm name. Customer-facing keys minted via the Org21 tenant-manager live in "global-customers".',
+				'Auth realm name. Customer-facing keys minted via the Org21 tenant-manager live in "global-customers".',
 			displayOptions: {
 				show: {
 					authMethod: ['keycloak'],
@@ -88,7 +95,7 @@ export class Org21Api implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Client secret from Key Service (shown once at key creation)',
+			description: 'Client secret from the Org21 tenant-manager UI (shown once at key creation)',
 			displayOptions: {
 				show: {
 					authMethod: ['keycloak'],
