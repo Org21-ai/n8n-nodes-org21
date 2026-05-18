@@ -40,9 +40,9 @@ class Org21Api {
                 displayName: 'Keycloak URL',
                 name: 'keycloakUrl',
                 type: 'string',
-                default: '',
-                placeholder: 'https://keycloak.org21.ai',
-                description: 'Base URL of the Keycloak server',
+                default: 'https://auth.org21.ai',
+                placeholder: 'https://auth.org21.ai',
+                description: 'Base URL of the Keycloak server. BYOC deployments override with their own.',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
@@ -53,8 +53,8 @@ class Org21Api {
                 displayName: 'Realm',
                 name: 'keycloakRealm',
                 type: 'string',
-                default: 'org21',
-                description: 'Keycloak realm name',
+                default: 'global-customers',
+                description: 'Keycloak realm name. Customer-facing keys minted via the Org21 tenant-manager live in "global-customers".',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
@@ -66,8 +66,8 @@ class Org21Api {
                 name: 'keycloakClientId',
                 type: 'string',
                 default: '',
-                placeholder: 'sa-acme-corp__my-workflow',
-                description: 'Client ID from Key Service (per-workflow key)',
+                placeholder: 'acme-otel-n8n-1747494609000',
+                description: 'Client ID of the per-tenant key minted via the Org21 tenant-manager UI ({tenant}-{name}; e.g. acme-otel-n8n-{ts}).',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
