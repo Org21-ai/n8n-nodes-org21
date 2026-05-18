@@ -205,9 +205,11 @@ export class FlowSniffer implements INodeType {
 						description: 'Send the sub-flow request without authentication',
 					},
 					{
-						name: 'Keycloak (OAuth2)',
+						name: 'Org21 OAuth2',
+						// Stored value retained as 'keycloak' for backward compat
+						// with existing saved workflows; do not rename (DEV-458).
 						value: 'keycloak',
-						description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
+						description: 'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
 					},
 				],
 				default: 'none',
@@ -221,7 +223,7 @@ export class FlowSniffer implements INodeType {
 			// The execute() branch handling apiKey is retained for backward compat.
 			{
 				displayName:
-					'N8n API Key authentication is no longer offered for new workflows. This existing config still runs, but please migrate by switching Authentication to Keycloak (OAuth2). See the README for migration steps.',
+					'N8n API Key authentication is no longer offered for new workflows. This existing config still runs, but please migrate by switching Authentication to Org21 OAuth2. See the README for migration steps.',
 				name: 'apiKeyDeprecationNotice',
 				type: 'notice',
 				default: '',
@@ -242,7 +244,7 @@ export class FlowSniffer implements INodeType {
 						name: 'OTLP Export',
 						value: 'otlp',
 						description:
-							'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Keycloak (OAuth2) authentication.',
+							'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Org21 OAuth2 authentication.',
 					},
 					{
 						name: 'Webhook POST',
@@ -255,12 +257,13 @@ export class FlowSniffer implements INodeType {
 			},
 
 			// ── OTLP-mode auth notice ───────────────────────────────────────────
-			// OTLP export only works with Keycloak (OAuth2) auth — the Org21
-			// collector validates JWTs and derives tenant_id from the subject
-			// claim. Surface this in-UI so the misconfig is caught before run.
+			// OTLP export only works with the Org21 OAuth2 auth method — the
+			// Org21 collector validates JWTs and derives tenant_id from the
+			// subject claim. Surface this in-UI so the misconfig is caught
+			// before run.
 			{
 				displayName:
-					'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication above to "Keycloak (OAuth2)" — the collector validates the JWT and derives tenant_id from it.',
+					'OTLP Export requires Org21 OAuth2 authentication. Set Authentication above to "Org21 OAuth2" — the collector validates the JWT and derives tenant_id from it.',
 				name: 'otlpAuthNotice',
 				type: 'notice',
 				default: '',
@@ -613,7 +616,7 @@ export class FlowSniffer implements INodeType {
 				if (authMethod !== 'keycloak') {
 					throw new NodeOperationError(
 						this.getNode(),
-						'OTLP Export requires Keycloak (OAuth2) authentication. Set Authentication to "Keycloak (OAuth2)" — the Org21 collector validates the JWT to attribute the tenant.',
+						'OTLP Export requires Org21 OAuth2 authentication. Set Authentication to "Org21 OAuth2" — the Org21 collector validates the JWT to attribute the tenant.',
 					);
 				}
 				const otlpEndpoint = ((this.getNodeParameter('otlpEndpoint', 0) as string) || '').replace(
@@ -660,7 +663,7 @@ export class FlowSniffer implements INodeType {
 				if (authMethod !== 'apiKey') {
 					throw new NodeOperationError(
 						this.getNode(),
-						'n8n API mode requires API Key authentication. Use Webhook mode for Keycloak auth.',
+						'n8n API mode requires API Key authentication. Use Webhook mode for Org21 OAuth2 auth.',
 					);
 				}
 				const apiCredentials = await this.getCredentials('org21Api');
