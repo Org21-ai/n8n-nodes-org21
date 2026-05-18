@@ -1,7 +1,7 @@
 {
     "name": "n8n-nodes-org21",
-    "version": "0.1.4",
-    "description": "n8n community node that sniffs workflow metadata, logs, timing, and errors, then triggers a sub-flow via webhook or n8n API.",
+    "version": "0.2.0",
+    "description": "n8n community node that sniffs workflow metadata, logs, timing, and errors, then exports to the Org21 OTLP collector or triggers an n8n sub-flow.",
     "license": "MIT",
     "homepage": "https://github.com/Org21-ai/n8n-nodes-org21",
     "keywords": [

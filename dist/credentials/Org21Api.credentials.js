@@ -23,9 +23,9 @@ class Org21Api {
                 type: 'options',
                 options: [
                     {
-                        name: 'Keycloak Service Key',
+                        name: 'Org21 Service Key',
                         value: 'keycloak',
-                        description: 'Authenticate via Keycloak client credentials (per-workflow key from Key Service)',
+                        description: 'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
                     },
                     {
                         name: 'API Key (Legacy)',
@@ -37,12 +37,12 @@ class Org21Api {
                 description: 'Authentication method to use',
             },
             {
-                displayName: 'Keycloak URL',
+                displayName: 'Auth URL',
                 name: 'keycloakUrl',
                 type: 'string',
-                default: '',
-                placeholder: 'https://keycloak.org21.ai',
-                description: 'Base URL of the Keycloak server',
+                default: 'https://auth.org21.ai',
+                placeholder: 'https://auth.org21.ai',
+                description: 'Base URL of the Org21 authentication server. BYOC deployments override with their own.',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
@@ -53,8 +53,8 @@ class Org21Api {
                 displayName: 'Realm',
                 name: 'keycloakRealm',
                 type: 'string',
-                default: 'org21',
-                description: 'Keycloak realm name',
+                default: 'global-customers',
+                description: 'Auth realm name. Customer-facing keys minted via the Org21 tenant-manager live in "global-customers".',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
@@ -66,8 +66,8 @@ class Org21Api {
                 name: 'keycloakClientId',
                 type: 'string',
                 default: '',
-                placeholder: 'sa-acme-corp__my-workflow',
-                description: 'Client ID from Key Service (per-workflow key)',
+                placeholder: 'acme-otel-n8n-1747494609000',
+                description: 'Client ID of the per-tenant key minted via the Org21 tenant-manager UI ({tenant}-{name}; e.g. acme-otel-n8n-{ts}).',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],
@@ -82,7 +82,7 @@ class Org21Api {
                     password: true,
                 },
                 default: '',
-                description: 'Client secret from Key Service (shown once at key creation)',
+                description: 'Client secret from the Org21 tenant-manager UI (shown once at key creation)',
                 displayOptions: {
                     show: {
                         authMethod: ['keycloak'],

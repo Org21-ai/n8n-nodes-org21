@@ -11,32 +11,40 @@ import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 /** Buffer before token expiry to trigger refresh (60 seconds). */
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 
-/** Default token TTL if not returned by Keycloak (30 minutes). */
+/** Default token TTL if not returned by the auth server (30 minutes). */
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 /**
- * Exchange Keycloak client credentials for a JWT access token.
- * Audiences: api, otel (hardcoded per design).
+ * Exchange service-key client credentials for a JWT access token via the
+ * Org21 auth server (OAuth2 client_credentials grant).
+ *
+ * The token's audience comes from the client's default scopes set up by
+ * tenant-manager at key creation (audience `metric-ingest` via the
+ * `metric-ingest-scope` audience mapper). We do NOT request a specific
+ * `audience` here — the auth server emits the configured one.
  */
-async function exchangeKeycloakToken(
+async function exchangeAuthToken(
 	context: IExecuteFunctions,
-	keycloakUrl: string,
+	authUrl: string,
 	realm: string,
 	clientId: string,
 	clientSecret: string,
 ): Promise<{ accessToken: string; expiresInMs: number }> {
-	const tokenUrl = `${keycloakUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+	const tokenUrl = `${authUrl.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
 
+	// n8n's helpers.httpRequest will URL-encode an object body when
+	// Content-Type is application/x-www-form-urlencoded, so we pass an object
+	// directly (avoids depending on URLSearchParams in environments where the
+	// global isn't typed).
 	const response = await context.helpers.httpRequest({
 		method: 'POST' as IHttpRequestMethods,
 		url: tokenUrl,
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({
+		body: {
 			grant_type: 'client_credentials',
 			client_id: clientId,
 			client_secret: clientSecret,
-			audience: 'api otel',
-		}).toString(),
+		},
 	});
 
 	const expiresIn = (response.expires_in as number) || (DEFAULT_TOKEN_TTL_MS / 1000);
@@ -48,12 +56,12 @@ async function exchangeKeycloakToken(
 }
 
 /**
- * Get a cached Keycloak JWT or exchange credentials for a fresh one.
+ * Get a cached service-key JWT or exchange credentials for a fresh one.
  * Uses n8n's getWorkflowStaticData() to persist the token between executions.
  */
-async function getCachedKeycloakToken(
+async function getCachedAuthToken(
 	context: IExecuteFunctions,
-	keycloakUrl: string,
+	authUrl: string,
 	realm: string,
 	clientId: string,
 	clientSecret: string,
@@ -71,9 +79,9 @@ async function getCachedKeycloakToken(
 	}
 
 	// Token missing or expired — exchange for a new one
-	const { accessToken, expiresInMs } = await exchangeKeycloakToken(
+	const { accessToken, expiresInMs } = await exchangeAuthToken(
 		context,
-		keycloakUrl,
+		authUrl,
 		realm,
 		clientId,
 		clientSecret,
@@ -85,6 +93,137 @@ async function getCachedKeycloakToken(
 	return accessToken;
 }
 
+/**
+ * Encode an attribute key/value into the OTLP/JSON `AnyValue` shape.
+ * Keeps only the types we actually emit; falls back to string for anything else.
+ */
+function otlpAttr(key: string, value: unknown): { key: string; value: IDataObject } {
+	if (value === null || value === undefined) {
+		return { key, value: { stringValue: '' } };
+	}
+	if (typeof value === 'string') return { key, value: { stringValue: value } };
+	if (typeof value === 'boolean') return { key, value: { boolValue: value } };
+	if (typeof value === 'number') {
+		return Number.isInteger(value)
+			? { key, value: { intValue: String(value) } }
+			: { key, value: { doubleValue: value } };
+	}
+	// Objects/arrays — serialize to JSON string to stay schema-simple.
+	return { key, value: { stringValue: JSON.stringify(value) } };
+}
+
+/**
+ * Build an OTLP/JSON ExportLogsServiceRequest or ExportTraceServiceRequest body.
+ *
+ * Schema-wise this is the subset the Org21 metric-otel-collector (contrib 0.114)
+ * accepts on /v1/logs and /v1/traces with `Content-Type: application/json`.
+ *
+ * `tenant_id` is intentionally NOT stamped — the Org21 collector derives it from
+ * the validated JWT claim and overwrites any caller value (DEV-311 anti-spoof).
+ * `source=n8n` is stamped so dashboards/queries can filter by emitter.
+ */
+function buildOtlpPayload(
+	context: IExecuteFunctions,
+	signal: string,
+	payload: IDataObject,
+	startTimeMs: number,
+): IDataObject {
+	const nowNs = (Date.now() * 1_000_000).toString();
+	const startNs = (startTimeMs * 1_000_000).toString();
+	const workflow = context.getWorkflow();
+	const nodeName = context.getNode().name;
+	const executionId = context.getExecutionId();
+
+	const resourceAttrs = [
+		otlpAttr('source', 'n8n'),
+		otlpAttr('service.name', 'n8n'),
+		otlpAttr('telemetry.sdk.name', 'n8n-nodes-org21'),
+	];
+
+	const recordAttrs = [
+		otlpAttr('workflow.id', workflow.id ?? ''),
+		otlpAttr('workflow.name', workflow.name ?? ''),
+		otlpAttr('execution.id', executionId),
+		otlpAttr('node.name', nodeName),
+	];
+	if (payload.timing && typeof payload.timing === 'object') {
+		const t = payload.timing as IDataObject;
+		if (typeof t.inputItemCount === 'number') recordAttrs.push(otlpAttr('item.count', t.inputItemCount));
+	}
+	if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+		recordAttrs.push(otlpAttr('error.count', payload.errors.length));
+	}
+
+	const bodyStr = JSON.stringify(payload);
+
+	if (signal === 'traces') {
+		// One span per execution. Span IDs are random hex.
+		const traceId = randomHex(16); // 16 bytes → 32 hex chars
+		const spanId = randomHex(8); // 8 bytes → 16 hex chars
+		return {
+			resourceSpans: [
+				{
+					resource: { attributes: resourceAttrs },
+					scopeSpans: [
+						{
+							scope: { name: 'n8n-nodes-org21.flowSniffer' },
+							spans: [
+								{
+									traceId,
+									spanId,
+									name: `n8n.${nodeName}`,
+									kind: 1, // SPAN_KIND_INTERNAL
+									startTimeUnixNano: startNs,
+									endTimeUnixNano: nowNs,
+									attributes: [...recordAttrs, otlpAttr('payload', bodyStr)],
+									status: { code: 0 }, // STATUS_CODE_UNSET; could be STATUS_CODE_ERROR if errors.length>0
+								},
+							],
+						},
+					],
+				},
+			],
+		};
+	}
+
+	// Default: logs
+	return {
+		resourceLogs: [
+			{
+				resource: { attributes: resourceAttrs },
+				scopeLogs: [
+					{
+						scope: { name: 'n8n-nodes-org21.flowSniffer' },
+						logRecords: [
+							{
+								timeUnixNano: nowNs,
+								observedTimeUnixNano: nowNs,
+								severityNumber: Array.isArray(payload.errors) && payload.errors.length > 0 ? 17 : 9, // ERROR : INFO
+								severityText: Array.isArray(payload.errors) && payload.errors.length > 0 ? 'ERROR' : 'INFO',
+								body: { stringValue: bodyStr },
+								attributes: recordAttrs,
+							},
+						],
+					},
+				],
+			},
+		],
+	};
+}
+
+/**
+ * Pseudo-random hex for OTLP trace/span IDs. Uses Math.random — n8n cloud's
+ * strict-mode lint forbids `globalThis` (Web Crypto) and we don't want to take
+ * a `@types/node` dep just for `crypto.randomBytes`. Collision risk on tracing
+ * IDs at single-tenant n8n volumes (a few hundred spans/day) is negligible;
+ * the OTLP collector treats them as opaque identifiers.
+ */
+function randomHex(byteLen: number): string {
+	let out = '';
+	for (let i = 0; i < byteLen * 2; i++) out += Math.floor(Math.random() * 16).toString(16);
+	return out;
+}
+
 export class Formatter implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Org21-Observer',
@@ -92,8 +231,8 @@ export class Formatter implements INodeType {
 		icon: 'file:org21.svg',
 		group: ['transform'],
 		version: 1,
-		subtitle: '={{$parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
-		description: 'Sniff workflow metadata, logs, timing, and errors, then trigger a sub-flow via webhook or n8n API',
+		subtitle: '={{$parameter["triggerMode"] === "otlp" ? "OTLP " + ($parameter["otlpSignal"] || "logs") : "API → Workflow " + $parameter["workflowId"]}}',
+		description: 'Sniff workflow metadata, logs, timing, and errors. Export to the Org21 OTLP collector or trigger an n8n sub-flow via the n8n API.',
 		defaults: {
 			name: 'Org21-Observer',
 		},
@@ -114,9 +253,9 @@ export class Formatter implements INodeType {
 				type: 'options',
 				options: [
 					{
-						name: 'Webhook POST',
-						value: 'webhook',
-						description: 'POST sniffed data to a sub-flow webhook URL',
+						name: 'OTLP Export',
+						value: 'otlp',
+						description: 'Export sniffed data to the Org21 OTLP collector (OTLP/HTTP+JSON)',
 					},
 					{
 						name: 'N8n API',
@@ -124,22 +263,47 @@ export class Formatter implements INodeType {
 						description: 'Trigger a workflow execution via n8n internal API',
 					},
 				],
-				default: 'webhook',
-				description: 'How to trigger the sub-flow',
+				default: 'otlp',
+				description: 'Where to send the sniffed payload',
 			},
 
-			// ── Webhook settings ────────────────────────────────────────────────
+			// ── OTLP settings ───────────────────────────────────────────────────
 			{
-				displayName: 'Webhook URL',
-				name: 'webhookUrl',
+				displayName: 'Org21 OTLP Endpoint',
+				name: 'otlpEndpoint',
 				type: 'string',
-				default: '',
+				default: 'https://otel.org21.ai',
 				required: true,
-				placeholder: 'https://your-n8n.example.com/webhook/abc123',
-				description: 'URL of the sub-flow webhook trigger to POST sniffed data to',
+				placeholder: 'https://otel.org21.ai',
+				description:
+					'Base URL of the Org21 OTLP collector. The signal-specific path (/v1/logs or /v1/traces) is appended automatically. BYOC deployments override this with their own collector URL.',
 				displayOptions: {
 					show: {
-						triggerMode: ['webhook'],
+						triggerMode: ['otlp'],
+					},
+				},
+			},
+			{
+				displayName: 'OTLP Signal',
+				name: 'otlpSignal',
+				type: 'options',
+				options: [
+					{
+						name: 'Logs',
+						value: 'logs',
+						description: 'Emit one OTLP log record per execution (recommended for events)',
+					},
+					{
+						name: 'Traces',
+						value: 'traces',
+						description: 'Emit one OTLP span per execution (recommended for timing)',
+					},
+				],
+				default: 'logs',
+				description: 'Which OTLP signal type to export',
+				displayOptions: {
+					show: {
+						triggerMode: ['otlp'],
 					},
 				},
 			},
@@ -398,7 +562,7 @@ export class Formatter implements INodeType {
 			}
 		}
 
-		// ── Resolve auth (Keycloak Bearer or legacy API key) ────────────────
+		// ── Resolve auth (service-key Bearer or legacy API key) ─────────────
 		let credentials: IDataObject | undefined;
 		try {
 			credentials = await this.getCredentials('org21Api') as IDataObject;
@@ -413,24 +577,28 @@ export class Formatter implements INodeType {
 		}
 
 		if (credentials) {
+			// Persisted credential field keys (keycloakUrl/keycloakRealm/...)
+			// retain the legacy `keycloak*` names so existing saved credentials
+			// keep working. The UI labels are display-only and read "Auth URL"
+			// etc. — see Org21Api.credentials.ts.
 			const authMethod = (credentials.authMethod as string) || 'apiKey';
 
 			if (authMethod === 'keycloak') {
-				const keycloakUrl = credentials.keycloakUrl as string;
-				const realm = (credentials.keycloakRealm as string) || 'org21';
+				const authUrl = credentials.keycloakUrl as string;
+				const realm = (credentials.keycloakRealm as string) || 'global-customers';
 				const clientId = credentials.keycloakClientId as string;
 				const clientSecret = credentials.keycloakClientSecret as string;
 
-				if (!keycloakUrl || !clientId || !clientSecret) {
+				if (!authUrl || !clientId || !clientSecret) {
 					throw new NodeOperationError(
 						this.getNode(),
-						'Keycloak credentials incomplete: URL, Client ID, and Client Secret are required',
+						'Service-key credentials incomplete: Auth URL, Client ID, and Client Secret are required',
 					);
 				}
 
-				const token = await getCachedKeycloakToken(
+				const token = await getCachedAuthToken(
 					this,
-					keycloakUrl,
+					authUrl,
 					realm,
 					clientId,
 					clientSecret,
@@ -446,28 +614,39 @@ export class Formatter implements INodeType {
 
 		// ── Trigger sub-flow ────────────────────────────────────────────────
 		try {
-			if (triggerMode === 'webhook') {
-				const webhookUrl = this.getNodeParameter('webhookUrl', 0) as string;
-				if (!webhookUrl) {
-					throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
+			if (triggerMode === 'otlp') {
+				const otlpEndpoint = (this.getNodeParameter('otlpEndpoint', 0) as string || '').replace(/\/+$/, '');
+				const otlpSignal = (this.getNodeParameter('otlpSignal', 0) as string) || 'logs';
+				if (!otlpEndpoint) {
+					throw new NodeOperationError(this.getNode(), 'Org21 OTLP Endpoint is required');
 				}
-				if (credentials) {
-					await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
-						method: 'POST' as IHttpRequestMethods,
-						url: webhookUrl,
-						body: payload,
-						headers,
-						json: true,
-					});
-				} else {
-					await this.helpers.httpRequest({
-						method: 'POST' as IHttpRequestMethods,
-						url: webhookUrl,
-						body: payload,
-						headers,
-						json: true,
-					});
+				if (!credentials) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'Credentials are required for OTLP export (use the Org21 Service Key auth method).',
+					);
 				}
+				if ((credentials.authMethod as string) !== 'keycloak') {
+					throw new NodeOperationError(
+						this.getNode(),
+						'OTLP export requires service-key auth. Set the credential’s Auth Method to "Org21 Service Key".',
+					);
+				}
+
+				const otlpUrl = `${otlpEndpoint}/v1/${otlpSignal}`;
+				const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
+
+				// httpRequest (not httpRequestWithAuthentication) — Authorization
+				// is already set on `headers` above via the manual service-key
+				// path; the generic-auth helper would add legacy X-N8N-API-KEY
+				// headers that the OTLP collector doesn't expect.
+				await this.helpers.httpRequest({
+					method: 'POST' as IHttpRequestMethods,
+					url: otlpUrl,
+					body: otlpBody,
+					headers: { ...headers, 'Content-Type': 'application/json' },
+					json: true,
+				});
 			} else {
 				// n8n API mode — requires credentials
 				const workflowId = this.getNodeParameter('workflowId', 0) as string;
@@ -488,11 +667,10 @@ export class Formatter implements INodeType {
 					}
 					apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
 				} else {
-					// Keycloak mode — n8n API URL must come from webhook URL or be configured elsewhere
-					// In Keycloak mode the primary use case is webhook POST with Bearer token
+					// Service-key auth mode is for OTLP export, not the n8n API.
 					throw new NodeOperationError(
 						this.getNode(),
-						'Keycloak auth is designed for Webhook mode. For n8n API mode, use API Key auth.',
+						'Org21 Service Key auth is for OTLP export. For n8n API mode, switch the credential to API Key (Legacy).',
 					);
 				}
 
