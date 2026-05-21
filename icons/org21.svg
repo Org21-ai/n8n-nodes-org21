@@ -1,19 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-label="Org21 N8N Node logo">
+<svg xmlns="http://www.w3.org/2000/svg" width="330" height="330" viewBox="0 0 330 330" role="img" aria-label="Org21 logo">
   <defs>
     <style>
       .navy { fill: #061F45; }
       .teal { fill: #10C7A0; }
-      .white { fill: #FFFFFF; }
-      .word { font-family: Inter, Arial, Helvetica, sans-serif; font-weight: 800; letter-spacing: -6px; }
-      .sub { font-family: Inter, Arial, Helvetica, sans-serif; font-weight: 750; letter-spacing: 1px; }
     </style>
   </defs>
-  <rect width="1600" height="900" fill="#FFFFFF"/>
-  <g transform="translate(180 275)">
-    <rect x="0" y="0" width="330" height="330" rx="70" class="navy"/>
-    <path d="M 214 90 A 105 105 0 1 0 262 182" fill="none" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/>
-    <rect x="205" y="70" width="68" height="68" rx="12" class="teal"/>
-  </g>
-  <text x="610" y="465" class="navy word" font-size="174">Org21</text>
-  <text x="625" y="620" class="navy sub" font-size="104">N8N Node</text>
+  <rect x="0" y="0" width="330" height="330" rx="70" class="navy"/>
+  <path d="M 214 90 A 105 105 0 1 0 262 182" fill="none" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/>
+  <rect x="205" y="70" width="68" height="68" rx="12" class="teal"/>
 </svg>
