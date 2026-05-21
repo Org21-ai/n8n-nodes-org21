@@ -212,7 +212,7 @@ export class FlowSniffer implements INodeType {
 						description: 'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
 					},
 				],
-				default: 'none',
+				default: 'keycloak',
 				description: 'How to authenticate the outbound sub-flow request',
 			},
 
@@ -252,7 +252,7 @@ export class FlowSniffer implements INodeType {
 						description: 'POST sniffed data to a sub-flow webhook URL',
 					},
 				],
-				default: 'webhook',
+				default: 'otlp',
 				description: 'Where to send the sniffed payload',
 			},
 
@@ -683,10 +683,7 @@ export class FlowSniffer implements INodeType {
 			}
 		} catch (error) {
 			if (this.continueOnFail()) {
-				return [[{ json: { error: (error as Error).message, payload }, pairedItem: 0 }]];
-			}
-			if (error instanceof NodeOperationError || error instanceof NodeApiError) {
-				throw error;
+				return [[{ json: { error: (error as Error).message, payload }, pairedItem: { item: 0 } }]];
 			}
 			throw new NodeApiError(this.getNode(), error as JsonObject);
 		}
@@ -700,6 +697,6 @@ export class FlowSniffer implements INodeType {
 		if (passThrough) {
 			return [items];
 		}
-		return [[{ json: payload as IDataObject }]];
+		return [[{ json: payload as IDataObject, pairedItem: { item: 0 } }]];
 	}
 }

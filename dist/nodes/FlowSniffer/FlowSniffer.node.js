@@ -165,7 +165,7 @@ class FlowSniffer {
                             description: 'Authenticate via Org21 service-key client credentials (per-workflow key from the Org21 tenant-manager UI)',
                         },
                     ],
-                    default: 'none',
+                    default: 'keycloak',
                     description: 'How to authenticate the outbound sub-flow request',
                 },
                 {
@@ -195,7 +195,7 @@ class FlowSniffer {
                             description: 'POST sniffed data to a sub-flow webhook URL',
                         },
                     ],
-                    default: 'webhook',
+                    default: 'otlp',
                     description: 'Where to send the sniffed payload',
                 },
                 {
@@ -576,10 +576,7 @@ class FlowSniffer {
         }
         catch (error) {
             if (this.continueOnFail()) {
-                return [[{ json: { error: error.message, payload }, pairedItem: 0 }]];
-            }
-            if (error instanceof n8n_workflow_1.NodeOperationError || error instanceof n8n_workflow_1.NodeApiError) {
-                throw error;
+                return [[{ json: { error: error.message, payload }, pairedItem: { item: 0 } }]];
             }
             throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
         }
@@ -589,7 +586,7 @@ class FlowSniffer {
         if (passThrough) {
             return [items];
         }
-        return [[{ json: payload }]];
+        return [[{ json: payload, pairedItem: { item: 0 } }]];
     }
 }
 exports.FlowSniffer = FlowSniffer;

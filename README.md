@@ -74,8 +74,8 @@ The node ships two credential types and a node-level `Authentication` selector t
 
 | Node `authMethod`        | Credential type (n8n name)                                              | Defined in                                                | Used by                                                                                |
 | ------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `none` *(default)*       | —                                                                       | —                                                         | Unauthenticated webhook POST. Useful for fire-and-forget local sub-flows.              |
-| `keycloak`               | **`Org21 OAuth2 API`** (`org21KeycloakOAuth2Api`, extends `oAuth2Api`) | `credentials/Org21KeycloakOAuth2Api.credentials.ts`       | Webhook mode against the Org21 OTEL ingestion path. OAuth2 `client_credentials` flow.  |
+| `none`                   | —                                                                       | —                                                         | Unauthenticated webhook POST. Useful for fire-and-forget local sub-flows.              |
+| `keycloak` *(default)*   | **`Org21 OAuth2 API`** (`org21KeycloakOAuth2Api`, extends `oAuth2Api`) | `credentials/Org21KeycloakOAuth2Api.credentials.ts`       | OTLP Export to the Org21 collector (default); also Webhook POST against any URL that requires the Bearer. OAuth2 `client_credentials` flow.  |
 | `apiKey` *(deprecated, hidden in v0.3.0)* | **`Org21 Legacy (Deprecated) API`** (`org21Api`)                        | `credentials/Org21Api.credentials.ts`                     | n8n API trigger mode against a self-hosted n8n; not for Org21 metric ingest. No longer offered for new workflows from v0.3.0; existing configs still run. Migrate to `keycloak`. |
 
 The OAuth2 token exchange is delegated entirely to n8n's built-in oAuth2 framework via `httpRequestWithAuthentication` — n8n handles token fetch, caching, refresh, and audit logging. The credential pre-fills the standard `oAuth2Api` fields:
@@ -124,8 +124,8 @@ Parameters (full list, in declaration order):
 
 | Parameter            | Type                          | Default     | Notes                                                                                                                |
 | -------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
-| `authMethod`         | options                       | `none`      | `none` \| `keycloak` \| `apiKey` *(deprecated)* — gates which credential slot the node shows                          |
-| `triggerMode`        | options                       | `webhook`   | `otlp` \| `webhook` \| `n8nApi` *(deprecated)* — `otlp` requires `authMethod=keycloak`; `n8nApi` requires `authMethod=apiKey` for the `baseUrl` |
+| `authMethod`         | options                       | `keycloak`  | `none` \| `keycloak` \| `apiKey` *(deprecated)* — gates which credential slot the node shows                          |
+| `triggerMode`        | options                       | `otlp`      | `otlp` \| `webhook` \| `n8nApi` *(deprecated)* — `otlp` requires `authMethod=keycloak`; `n8nApi` requires `authMethod=apiKey` for the `baseUrl` |
 | `otlpEndpoint`       | string (required)             | `https://otel.org21.ai` | Shown only when `triggerMode=otlp`. Base URL of the Org21 OTLP collector; signal-specific path (`/v1/logs` or `/v1/traces`) is appended automatically. Override only for BYOC. |
 | `otlpSignal`         | options                       | `logs`      | Shown only when `triggerMode=otlp`. `logs` (one OTLP log record per execution) \| `traces` (one OTLP span per execution) |
 | `webhookUrl`         | string (required)             | —           | Shown only when `triggerMode=webhook`                                                                                |
@@ -222,7 +222,7 @@ CI runs `npm ci && npm run build && npm run lint` on `v*` tag pushes (`.github/w
 - **Versioning** — semver in `package.json`. Tag `vX.Y.Z` to trigger the npm publish workflow.
 - **Icons** — clean SVGs (no `<!DOCTYPE>`, `px` not `pt`), placed alongside the `.ts` file and referenced via `icon: 'file:org21.svg'`.
 - **`dist/` is the only published artifact** (`"files": ["dist"]`).
-- **Auth defaults to `none` on the node** — production deployments must explicitly pick `Org21 OAuth2` and attach an `Org21 OAuth2 API` credential with a per-workflow Key Service secret. The deprecated `apiKey` auth + `n8nApi` trigger mode are kept only for backward compatibility with existing self-hosted-n8n configurations and will be removed in a future release.
+- **Auth defaults to `Org21 OAuth2` and trigger mode defaults to `OTLP Export`** — new node instances render with the production-correct setup and prompt for an `Org21 OAuth2 API` credential immediately. Users running unauthenticated local sub-flows can flip Authentication back to `None` and Trigger Mode to `Webhook POST`. The deprecated `apiKey` auth + `n8nApi` trigger mode are kept only for backward compatibility with existing self-hosted-n8n configurations and will be removed in a future release.
 - **Always use `https://auth.org21.ai`** as the OAuth2 issuer (public hostname) when validating Bearers downstream — even from inside the cluster.
 
 ## Related
