@@ -9,9 +9,10 @@ The package ships one node — `Org21-Observer` (internal name `flowSniffer`, di
 1. Captures `workflow.{id,name,active}`, `executionId`, `node.{name,type}`, and an ISO timestamp via `IExecuteFunctions.getWorkflow()` / `getExecutionId()` / `getNode()`.
 2. Captures the JSON payload of every input item, plus `inputItemCount` and `executionStartMs` timing, and any `item.error` records.
 3. Allows free-form `customFields` (string / number / boolean / array(JSON) / object(JSON) / binary) merged into the payload.
-4. Triggers a sub-flow in one of two modes:
-   - **Webhook POST** (`triggerMode=webhook`) — `POST <Webhook URL>` with the assembled JSON payload.
-   - **n8n API** (`triggerMode=n8nApi`) — `POST {baseUrl}/api/v1/workflows/{workflowId}/run`.
+4. Exports the captured payload via one of three trigger modes:
+   - **OTLP Export** (`triggerMode=otlp`) — `POST {otlpEndpoint}/v1/{logs|traces}` against the Org21 OTLP collector (OTLP/HTTP+JSON). Requires Org21 OAuth2 authentication; the collector validates the JWT and derives `tenant_id` from the subject claim. Recommended path for sending data to the Org21 platform.
+   - **Webhook POST** (`triggerMode=webhook`) — `POST <Webhook URL>` with the assembled JSON payload. Use for fan-out to any sub-flow webhook.
+   - **n8n API** (`triggerMode=n8nApi`, *deprecated*) — `POST {baseUrl}/api/v1/workflows/{workflowId}/run`. Kept for backward compatibility; not offered to new workflows.
 5. Adds `triggerDurationMs` after the sub-flow returns.
 6. Emits original input items downstream by default (`passThrough=true`), so the Observer is non-invasive.
 
@@ -41,9 +42,7 @@ npm install n8n-nodes-org21
 # then restart n8n
 ```
 
-For end-to-end setup against an Org21 tenant (OAuth2 realm, Key Service per-workflow secret, sub-flow URL), follow:
-
-> https://github.com/Org21-ai/architecture/blob/main/guides/n8n-nodes-installation-guide.md
+For end-to-end setup against an Org21 tenant (OAuth2 realm, Key Service per-workflow secret, OTLP endpoint), see the **Configuration** section below — it walks the credential setup, the OAuth2 + OTLP wiring, and the legacy migration. Reach out to your Org21 contact for the per-workflow Key Service client ID + secret.
 
 Compatibility: **n8n >= 1.0.0**, **Node.js >= 22**.
 
@@ -126,7 +125,9 @@ Parameters (full list, in declaration order):
 | Parameter            | Type                          | Default     | Notes                                                                                                                |
 | -------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | `authMethod`         | options                       | `none`      | `none` \| `keycloak` \| `apiKey` *(deprecated)* — gates which credential slot the node shows                          |
-| `triggerMode`        | options                       | `webhook`   | `webhook` \| `n8nApi` *(deprecated)* — `n8nApi` requires `authMethod=apiKey` for the `baseUrl`                        |
+| `triggerMode`        | options                       | `webhook`   | `otlp` \| `webhook` \| `n8nApi` *(deprecated)* — `otlp` requires `authMethod=keycloak`; `n8nApi` requires `authMethod=apiKey` for the `baseUrl` |
+| `otlpEndpoint`       | string (required)             | `https://otel.org21.ai` | Shown only when `triggerMode=otlp`. Base URL of the Org21 OTLP collector; signal-specific path (`/v1/logs` or `/v1/traces`) is appended automatically. Override only for BYOC. |
+| `otlpSignal`         | options                       | `logs`      | Shown only when `triggerMode=otlp`. `logs` (one OTLP log record per execution) \| `traces` (one OTLP span per execution) |
 | `webhookUrl`         | string (required)             | —           | Shown only when `triggerMode=webhook`                                                                                |
 | `workflowId`         | string (required)             | —           | Shown only when `triggerMode=n8nApi`                                                                                 |
 | `includeMetadata`    | boolean                       | `true`      | Workflow + execution + node + timestamp                                                                              |
@@ -226,7 +227,6 @@ CI runs `npm ci && npm run build && npm run lint` on `v*` tag pushes (`.github/w
 
 ## Related
 
-- `Org21-ai/architecture` — `PLATFORM_OVERVIEW.md` (Flow Sniffer placement in the n8n tier), chapter 02 (data-plane / OTEL), `guides/n8n-nodes-installation-guide.md` (end-user setup).
 - `Org21-ai/pipelines` — reusable `standard-ci.yml` and `jira-check.yml` workflows; this repo only consumes `jira-check.yml`.
 - `Org21-ai/otel-collector`, `otel-auth-proxy` — receive the metrics this node emits; honor `aud=metric-ingest` OAuth2 JWTs.
 - `Org21-ai/ingest-metrics`, `Org21-ai/query-platform` — downstream of the collector; convert Observer events into the AI-spend metric model.
