@@ -610,77 +610,86 @@ export class FlowSniffer implements INodeType {
 				: authMethod === 'apiKey' ? 'org21Api'
 					: null;
 
-		// ── Trigger sub-flow ────────────────────────────────────────────────
-		try {
-			if (triggerMode === 'otlp') {
-				if (authMethod !== 'keycloak') {
-					throw new NodeOperationError(
-						this.getNode(),
-						'OTLP Export requires Org21 OAuth2 authentication. Set Authentication to "Org21 OAuth2" — the Org21 collector validates the JWT to attribute the tenant.',
-					);
-				}
-				const otlpEndpoint = ((this.getNodeParameter('otlpEndpoint', 0) as string) || '').replace(
-					/\/+$/,
-					'',
+		// ── Validate config + resolve per-mode HTTP call ────────────────────
+		// All NodeOperationError throws stay OUTSIDE the try/catch so they
+		// surface as configuration errors, not API errors. Only the actual
+		// outbound HTTP call is wrapped (n8n verification: 2026-05-22 review).
+		let httpCall: () => Promise<unknown>;
+		if (triggerMode === 'otlp') {
+			if (authMethod !== 'keycloak') {
+				throw new NodeOperationError(
+					this.getNode(),
+					'OTLP Export requires Org21 OAuth2 authentication. Set Authentication to "Org21 OAuth2" — the Org21 collector validates the JWT to attribute the tenant.',
 				);
-				const otlpSignal = (this.getNodeParameter('otlpSignal', 0) as string) || 'logs';
-				if (!otlpEndpoint) {
-					throw new NodeOperationError(this.getNode(), 'Org21 OTLP Endpoint is required');
-				}
-				const otlpUrl = `${otlpEndpoint}/v1/${otlpSignal}`;
-				const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
-
-				await this.helpers.httpRequestWithAuthentication.call(this, 'org21KeycloakOAuth2Api', {
+			}
+			const otlpEndpoint = ((this.getNodeParameter('otlpEndpoint', 0) as string) || '').replace(
+				/\/+$/,
+				'',
+			);
+			const otlpSignal = (this.getNodeParameter('otlpSignal', 0) as string) || 'logs';
+			if (!otlpEndpoint) {
+				throw new NodeOperationError(this.getNode(), 'Org21 OTLP Endpoint is required');
+			}
+			const otlpUrl = `${otlpEndpoint}/v1/${otlpSignal}`;
+			const otlpBody = buildOtlpPayload(this, otlpSignal, payload, startTime);
+			httpCall = () =>
+				this.helpers.httpRequestWithAuthentication.call(this, 'org21KeycloakOAuth2Api', {
 					method: 'POST' as IHttpRequestMethods,
 					url: otlpUrl,
 					body: otlpBody,
 					headers: { ...headers, 'Content-Type': 'application/json' },
 					json: true,
 				});
-			} else if (triggerMode === 'webhook') {
-				const webhookUrl = this.getNodeParameter('webhookUrl', 0) as string;
-				if (!webhookUrl) {
-					throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
-				}
-				if (credentialName) {
-					await this.helpers.httpRequestWithAuthentication.call(this, credentialName, {
+		} else if (triggerMode === 'webhook') {
+			const webhookUrl = this.getNodeParameter('webhookUrl', 0) as string;
+			if (!webhookUrl) {
+				throw new NodeOperationError(this.getNode(), 'Webhook URL is required');
+			}
+			if (credentialName) {
+				const cn = credentialName;
+				httpCall = () =>
+					this.helpers.httpRequestWithAuthentication.call(this, cn, {
 						method: 'POST' as IHttpRequestMethods,
 						url: webhookUrl,
 						body: payload,
 						headers,
 						json: true,
 					});
-				} else {
-					await postWithoutAuth(this, webhookUrl, payload, headers);
-				}
 			} else {
-				// n8n API mode — only meaningful with the legacy API key credential,
-				// since it needs `baseUrl` from the credential to build the URL.
-				const workflowId = this.getNodeParameter('workflowId', 0) as string;
-				if (!workflowId) {
-					throw new NodeOperationError(this.getNode(), 'Workflow ID is required');
-				}
-				if (authMethod !== 'apiKey') {
-					throw new NodeOperationError(
-						this.getNode(),
-						'n8n API mode requires API Key authentication. Use Webhook mode for Org21 OAuth2 auth.',
-					);
-				}
-				const apiCredentials = await this.getCredentials('org21Api');
-				const baseUrl = ((apiCredentials.baseUrl as string) || '').replace(/\/+$/, '');
-				if (!baseUrl) {
-					throw new NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
-				}
-				const apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
-
-				await this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
+				httpCall = () => postWithoutAuth(this, webhookUrl, payload, headers);
+			}
+		} else {
+			// n8n API mode — only meaningful with the legacy API key credential,
+			// since it needs `baseUrl` from the credential to build the URL.
+			const workflowId = this.getNodeParameter('workflowId', 0) as string;
+			if (!workflowId) {
+				throw new NodeOperationError(this.getNode(), 'Workflow ID is required');
+			}
+			if (authMethod !== 'apiKey') {
+				throw new NodeOperationError(
+					this.getNode(),
+					'n8n API mode requires API Key authentication. Use Webhook mode for Org21 OAuth2 auth.',
+				);
+			}
+			const apiCredentials = await this.getCredentials('org21Api');
+			const baseUrl = ((apiCredentials.baseUrl as string) || '').replace(/\/+$/, '');
+			if (!baseUrl) {
+				throw new NodeOperationError(this.getNode(), 'Base URL is required for API Key auth');
+			}
+			const apiUrl = `${baseUrl}/api/v1/workflows/${workflowId}/run`;
+			httpCall = () =>
+				this.helpers.httpRequestWithAuthentication.call(this, 'org21Api', {
 					method: 'POST' as IHttpRequestMethods,
 					url: apiUrl,
 					body: payload,
 					headers,
 					json: true,
 				});
-			}
+		}
+
+		// ── Trigger sub-flow ────────────────────────────────────────────────
+		try {
+			await httpCall();
 		} catch (error) {
 			if (this.continueOnFail()) {
 				return [[{ json: { error: (error as Error).message, payload }, pairedItem: { item: 0 } }]];
