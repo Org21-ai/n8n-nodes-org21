@@ -105,6 +105,39 @@ Type coercion happens in the `execute()` method under the `// ── Custom fiel
 
 All logic is in `nodes/FlowSniffer/FlowSniffer.node.ts` inside the `execute()` method.
 
+### Error handling in `execute()`
+
+Two error classes, two meanings — keep them separate:
+
+- **`NodeOperationError`** — user-config mistakes (missing URL, wrong auth mode, empty workflow ID). n8n surfaces these as a red banner on the node's config panel pointing at the bad field.
+- **`NodeApiError`** — failures from the outbound HTTP call to the user's webhook / OTLP endpoint / n8n API. n8n surfaces these as a remote-API error.
+
+**Structure `execute()` so config-validation throws live OUTSIDE the try/catch, and only the outbound HTTP call is wrapped:**
+
+```ts
+// Validate + resolve the per-mode HTTP call. NodeOperationError throws here
+// bubble up uncaught — that's intentional.
+let httpCall: () => Promise<unknown>;
+if (mode === 'A') {
+  if (!param) throw new NodeOperationError(this.getNode(), 'Param is required');
+  httpCall = () => this.helpers.httpRequestWithAuthentication.call(this, credType, { ... });
+} else { /* same shape */ }
+
+// Only the network call is in the try. NodeApiError wraps real HTTP failures.
+try {
+  await httpCall();
+} catch (error) {
+  if (this.continueOnFail()) {
+    return [[{ json: { error: (error as Error).message, payload }, pairedItem: { item: 0 } }]];
+  }
+  throw new NodeApiError(this.getNode(), error as JsonObject);
+}
+```
+
+> **Do NOT** put `throw new NodeOperationError(...)` inside the try block and rely on an `instanceof` narrow-and-rethrow guard to skip the wrap. The stricter `@n8n/community-nodes/require-node-api-error` lint rule (shipping in `@n8n/node-cli@0.32+`) flags the narrow-and-rethrow pattern; you'll be tempted to "fix" it by dropping the guard and letting everything wrap as `NodeApiError`. **n8n cloud verification will reject the release** — config errors must remain `NodeOperationError`. The structural fix above satisfies both the lint rule (try block has no `NodeOperationError` throws) and the verification team. See [Handle Errors](https://docs.n8n.io/integrations/creating-nodes/build/reference/node-base-files/standard-parameters/#handle-errors) for the n8n reference. Tracked in DEV-643 (regression) → DEV-656 (fix).
+
+Also: `getCredentials(...)` is credential-lookup, not an HTTP call to the user's endpoint — keep it outside the try too. Its failures are config-shaped, not API-shaped.
+
 ## Lint
 
 ```bash
