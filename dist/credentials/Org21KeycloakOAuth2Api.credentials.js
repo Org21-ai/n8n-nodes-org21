@@ -7,7 +7,7 @@ class Org21KeycloakOAuth2Api {
         this.extends = ['oAuth2Api'];
         this.displayName = 'Org21 OAuth2 API';
         this.icon = 'file:org21.svg';
-        this.documentationUrl = 'https://docs.n8n.io/integrations/builtin/credentials/oauth2/';
+        this.documentationUrl = 'https://www.npmjs.com/package/n8n-nodes-org21';
         this.properties = [
             {
                 displayName: 'Auth URL',

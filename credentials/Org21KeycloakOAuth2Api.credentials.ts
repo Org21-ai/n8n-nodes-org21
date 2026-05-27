@@ -8,7 +8,7 @@ export class Org21KeycloakOAuth2Api implements ICredentialType {
 	extends = ['oAuth2Api'];
 	displayName = 'Org21 OAuth2 API';
 	icon = 'file:org21.svg' as const;
-	documentationUrl = 'https://docs.n8n.io/integrations/builtin/credentials/oauth2/';
+	documentationUrl = 'https://www.npmjs.com/package/n8n-nodes-org21';
 
 	properties: INodeProperties[] = [
 		{

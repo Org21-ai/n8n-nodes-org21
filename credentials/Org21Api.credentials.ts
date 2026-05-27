@@ -9,7 +9,7 @@ export class Org21Api implements ICredentialType {
 	name = 'org21Api';
 	displayName = 'Org21 Legacy (Deprecated) API';
 	icon = 'file:org21.svg' as const;
-	documentationUrl = 'https://docs.n8n.io/api/authentication/';
+	documentationUrl = 'https://www.npmjs.com/package/n8n-nodes-org21';
 	authenticate: IAuthenticateGeneric = {
 		type: 'generic',
 		properties: {

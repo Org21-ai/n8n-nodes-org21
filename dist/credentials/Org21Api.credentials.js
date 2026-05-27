@@ -6,7 +6,7 @@ class Org21Api {
         this.name = 'org21Api';
         this.displayName = 'Org21 Legacy (Deprecated) API';
         this.icon = 'file:org21.svg';
-        this.documentationUrl = 'https://docs.n8n.io/api/authentication/';
+        this.documentationUrl = 'https://www.npmjs.com/package/n8n-nodes-org21';
         this.authenticate = {
             type: 'generic',
             properties: {

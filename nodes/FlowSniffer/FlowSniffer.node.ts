@@ -159,7 +159,7 @@ export class FlowSniffer implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["triggerMode"] === "otlp" ? "OTLP " + ($parameter["otlpSignal"] || "logs") : $parameter["triggerMode"] === "webhook" ? "Webhook" : "API → Workflow " + $parameter["workflowId"]}}',
 		description: 'Sniff workflow metadata, logs, timing, and errors. Export to the Org21 OTLP collector or trigger a sub-flow via webhook or n8n API.',
-		documentationUrl: 'https://github.com/Org21-ai/n8n-nodes-org21#readme',
+		documentationUrl: 'https://www.npmjs.com/package/n8n-nodes-org21',
 		defaults: {
 			name: 'Org21-Observer',
 		},
