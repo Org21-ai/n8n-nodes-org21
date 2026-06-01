@@ -70,6 +70,17 @@ npm run publish:manual   # = npm run lint && npm run build && npm publish --acce
 
 ## Configuration (n8n credentials, OTEL endpoint)
 
+> **Defaults at a glance (v0.3.7)** — a freshly added Org21-Observer is production-correct out of the box for the Org21 platform:
+>
+> | Setting | Default | Notes |
+> | --- | --- | --- |
+> | `Authentication` | `Org21 OAuth2` | Switch to `None` only for unauthenticated local sub-flow webhooks. |
+> | `Trigger Mode` | `OTLP Export` | Switch to `Webhook POST` only when fanning out to a sub-flow you control. |
+> | `Org21 OTLP Endpoint` | `https://otel.org21.ai` | Override only for BYOC deployments. |
+> | `OTLP Signal` | `Logs` | Switch to `Traces` for span-shaped telemetry. |
+> | `Include Metadata / Item Data / Timing / Errors` | All `On` | Toggle off individually if you don't want a particular capture category forwarded. |
+> | `Pass Through` | `On` | Keeps the Observer non-invasive in your data flow. |
+
 The node ships two credential types and a node-level `Authentication` selector that picks between them (or none):
 
 | Node `authMethod`        | Credential type (n8n name)                                              | Defined in                                                | Used by                                                                                |
