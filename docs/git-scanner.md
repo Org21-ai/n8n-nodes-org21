@@ -90,6 +90,13 @@ Group access tokens are preferred because they skip the SAML session-establishme
 2. Scopes: `read_api`, `read_repository`.
 3. If your GitLab group enforces SAML, visit the group once in a browser **before** scanning to establish the SSO session.
 
+> **⚠️ Email visibility — required for cross-connector identity merge.**
+> Each contributor's email is read from the member endpoint (GitLab `/users`, GitHub `/users/:login`), which **masks** the address unless your token may read member PII. Without emails, a Git contributor cannot be matched to the same person in HiBob / Jira and lands as a **duplicate** in the graph.
+> - **GitHub:** a member's email is visible only if they made it public, or to an **org-owner** token with verified/SAML identity. Privacy-enabled users surface a `…@users.noreply.github.com` address (not their real email).
+> - **GitLab:** a **Reporter** group token — and even a **Group Owner** on GitLab.com — returns empty emails for members who are **not Enterprise users claimed via a verified domain**. For real emails, use an **instance admin** token (self-managed GitLab), or ensure your members are Enterprise-claimed by your verified domain.
+>
+> After scanning, `org21-git-scan` prints **email coverage** (e.g. `Emails: 41/52 (79%)`) and warns when it is low. Add `--require-email-coverage 70` to make the scan **fail** below a threshold (useful in CI) so you don't upload a file that can't merge. If coverage is low, re-scan with a higher-permission token.
+
 **Sanity-check your token before scanning:**
 
 ```bash
