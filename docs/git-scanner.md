@@ -90,12 +90,17 @@ Group access tokens are preferred because they skip the SAML session-establishme
 2. Scopes: `read_api`, `read_repository`.
 3. If your GitLab group enforces SAML, visit the group once in a browser **before** scanning to establish the SSO session.
 
-> **⚠️ Email visibility — required for cross-connector identity merge.**
-> Each contributor's email is read from the member endpoint (GitLab `/users`, GitHub `/users/:login`), which **masks** the address unless your token may read member PII. Without emails, a Git contributor cannot be matched to the same person in HiBob / Jira and lands as a **duplicate** in the graph.
-> - **GitHub:** a member's email is visible only if they made it public, or to an **org-owner** token with verified/SAML identity. Privacy-enabled users surface a `…@users.noreply.github.com` address (not their real email).
-> - **GitLab:** a **Reporter** group token — and even a **Group Owner** on GitLab.com — returns empty emails for members who are **not Enterprise users claimed via a verified domain**. For real emails, use an **instance admin** token (self-managed GitLab), or ensure your members are Enterprise-claimed by your verified domain.
+> **📧 Email coverage — this is what links Git people to HiBob / Jira.**
+> Org21 matches a Git contributor to the same person elsewhere **by email**. A scan with blank emails still works, but those people won't merge — they show up as duplicates in the graph. After scanning, `org21-git-scan` prints `Emails: n/total (pct%)` and warns when it's low; add `--require-email-coverage 70` to **fail** a scan below a threshold (e.g. in CI) so you don't upload an unmergeable file. How to maximize coverage:
 >
-> After scanning, `org21-git-scan` prints **email coverage** (e.g. `Emails: 41/52 (79%)`) and warns when it is low. Add `--require-email-coverage 70` to make the scan **fail** below a threshold (useful in CI) so you don't upload a file that can't merge. If coverage is low, re-scan with a higher-permission token.
+> **GitLab**
+> - **Self-managed:** use an **instance-admin** personal access token (`read_api`) — it exposes every member's account email. Best coverage.
+> - **GitLab.com:** a normal group / **Reporter** token now still captures each contributor's **git-commit author email** (often their real address). For **corporate** member emails, your top-level group needs a **verified domain** and members must be **Enterprise users** (claimed via that domain or SAML/SCIM) — a group without a verified domain can't expose member emails over the API.
+>
+> **GitHub**
+> - The API only exposes a member's **public profile email**. If a member hasn't made one public — the common default — it comes back blank and **no token changes that**; privacy-enabled users surface a `…@users.noreply.github.com` placeholder (not mergeable). To raise coverage, ask members to set a public email (**Settings → Emails**), or supply a corporate-email mapping out-of-band.
+>
+> _Pulling corporate emails for verified-domain / SAML orgs (GitLab `/groups/members`, GitHub `/orgs/members` + SCIM) is on the roadmap — DEV-1068. Until then, a GitLab self-managed instance-admin token gives the best coverage._
 
 **Sanity-check your token before scanning:**
 
