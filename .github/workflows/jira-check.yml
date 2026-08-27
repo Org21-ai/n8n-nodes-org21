@@ -35,6 +35,13 @@ permissions:
 
 jobs:
   check-jira-key:
+    # A vendored job is not a reusable-workflow call, so it has no caller
+    # key to prefix and would publish a bare `check-jira-key`. Setting the
+    # display name makes it publish `jira / check-jira-key` -- the name the
+    # org ruleset requires (architecture 11.1) -- so this repo needs no
+    # ruleset exception despite being the one repo that cannot call the
+    # shared workflow.
+    name: jira / check-jira-key
     runs-on: ubuntu-latest
     steps:
       - name: Validate Jira Key Presence
